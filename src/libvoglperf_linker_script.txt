@@ -1,0 +1,8 @@
+{
+  global:
+    glXSwapBuffers;
+    glXMakeCurrent;
+    dlopen;
+  local:
+    *;
+};
