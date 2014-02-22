@@ -71,5 +71,5 @@ gnuplot -p -e 'set output "blah.png";set terminal pngcairo size 1280,720 enhance
 Example Screenshot
 ------------------
 
-![Image Alt](https://raw.github.com/ValveSoftware/voglperf/master/screenshot.png)
+![Example screenshot](https://raw.github.com/ValveSoftware/voglperf/master/screenshot.png)
 
