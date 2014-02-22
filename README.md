@@ -64,7 +64,11 @@ Launch local executable:
 Logfiles
 --------
 
-> gnuplot -p -e 'set terminal wxt size 1280,720;set ylabel "milliseconds";set yrange [0:100]; plot "/tmp/voglperf.Team-Fortress-2.2014_02_13-13_06_20.csv" with lines'  
+Display graph in gnuplot (install gnuplot-x11):
+
+> gnuplot -p -e 'set terminal wxt size 1280,720;set ylabel "milliseconds";set yrange [0:100]; plot "/tmp/voglperf.Team-Fortress-2.2014_02_13-13_06_20.csv" with lines'
+
+Output graph to blah.png:
 
 > gnuplot -p -e 'set output "blah.png";set terminal pngcairo size 1280,720 enhanced;set ylabel "milliseconds";set yrange [0:100]; plot "/tmp/voglperf.Team-Fortress-2.2014_02_13-13_06_20.csv" with lines'
 
