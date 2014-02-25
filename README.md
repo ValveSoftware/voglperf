@@ -35,10 +35,10 @@ To build amd64 and i386 packages:
 > make
 
 To build just i386:
-> make voglproj32
+> make voglperf32
 
 To build just amd64:
-> make voglproj64
+> make voglperf64
 
 To delete the build32, build64, and bin build files:
 > make clean
