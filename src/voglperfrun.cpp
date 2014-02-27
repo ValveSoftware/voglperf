@@ -111,7 +111,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
                     //fprintf(stderr, "\nERROR: Unknown argument: %s\n\n", arg);
                     //argp_state_help(state, stderr, ARGP_HELP_LONG | ARGP_HELP_EXIT_OK);
                     // These are actually arguments to our program, e.g. if the user wants to run "voglperfrun -- glxgears -info", here we get "-info"
-                    arguments->prog_args += std::string(" ") + state->argv[state->next - 1];
+                    arguments->prog_args += std::string(" \"") + state->argv[state->next - 1] + "\"";
                 }
                 else {
                     arguments->gameid = arg;
