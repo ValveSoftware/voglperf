@@ -538,7 +538,7 @@ static void init_launch_cmd(launch_data_t &ld)
     }
     else
     {
-        ld.launch_cmd = ld.VOGL_CMD_LINE + " " + ld.LD_PRELOAD + " " + ld.args.gameid;
+        ld.launch_cmd = ld.VOGL_CMD_LINE + " " + ld.LD_PRELOAD + " \"" + ld.args.gameid + "\"";
 
     }
 
