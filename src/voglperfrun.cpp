@@ -59,6 +59,7 @@ struct arguments_t
     std::string cmdline;    // Command line arguments for VOGL_CMD_LINE (--showfps, etc.)
     std::string logfile;    // Logfile name.
     std::string gameid;     // Game id from command line.
+    std::string prog_args;     // arguments for the "gameid"
 
     // Array of game ids and names. Usually read from appids.txt.
     bool appids_file_found;
@@ -75,6 +76,7 @@ struct launch_data_t
     std::string LD_PRELOAD; // LD_PRELOAD string.
     std::string VOGL_CMD_LINE; // VOGL_CMD_LINE string.
     std::string launch_cmd; // Game launch command.
+    std::string prog_args; // args passed to the program to benchmark
 };
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -106,11 +108,14 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
             {
                 if (arguments->gameid.size())
                 {
-                    fprintf(stderr, "\nERROR: Unknown argument: %s\n\n", arg);
-                    argp_state_help(state, stderr, ARGP_HELP_LONG | ARGP_HELP_EXIT_OK);
+                    //fprintf(stderr, "\nERROR: Unknown argument: %s\n\n", arg);
+                    //argp_state_help(state, stderr, ARGP_HELP_LONG | ARGP_HELP_EXIT_OK);
+                    // These are actually arguments to our program, e.g. if the user wants to run "voglperfrun -- glxgears -info", here we get "-info"
+                    arguments->prog_args += std::string(" ") + state->argv[state->next - 1];
                 }
-
-                arguments->gameid = arg;
+                else {
+                    arguments->gameid = arg;
+                }
             }
             break;
 
@@ -538,7 +543,7 @@ static void init_launch_cmd(launch_data_t &ld)
     }
     else
     {
-        ld.launch_cmd = ld.VOGL_CMD_LINE + " " + ld.LD_PRELOAD + " \"" + ld.args.gameid + "\"";
+        ld.launch_cmd = ld.VOGL_CMD_LINE + " " + ld.LD_PRELOAD + " \"" + ld.args.gameid + "\" " + ld.prog_args;
 
     }
 
@@ -662,6 +667,9 @@ int main(int argc, char **argv)
 
     // Set up gameid and local file check.
     init_gameid(ld);
+
+    // set up args for gameid
+    ld.prog_args = ld.args.prog_args;
 
     // Initialize game name.
     init_gameid_str(ld);
