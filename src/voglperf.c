@@ -42,10 +42,6 @@
 
 #include <GL/glx.h>
 
-#include "SDL2/SDL_timer.h"
-#include "SDL2/SDL_stdinc.h"
-#include "SDL2/SDL_loadso.h"
-
 #include "voglperf.h"
 
 #define OS_POSIX 
@@ -69,13 +65,13 @@ int g_msqid = -1;
 
 __attribute__((destructor)) static void vogl_perf_destructor_func();
 
-#define SDL_X11_SYM(rc, fn, params, args, ret) \
-    typedef rc(*SDL_DYNX11FN_##fn) params;     \
-    SDL_DYNX11FN_##fn X11_##fn;
+#define VOGL_X11_SYM(rc, fn, params, args, ret) \
+    typedef rc(*VOGL_DYNX11FN_##fn) params;     \
+    VOGL_DYNX11FN_##fn X11_##fn;
 
-SDL_X11_SYM(XFontStruct *, XLoadQueryFont, (Display *a, _Xconst char *b), (a, b), return)
-SDL_X11_SYM(GC, XCreateGC, (Display *a, Drawable b, unsigned long c, XGCValues *d), (a, b, c, d), return)
-SDL_X11_SYM(int, XDrawString, (Display *a, Drawable b, GC c, int d, int e, _Xconst char *f, int g), (a, b, c, d, e, f, g), return)
+VOGL_X11_SYM(XFontStruct *, XLoadQueryFont, (Display *a, _Xconst char *b), (a, b), return)
+VOGL_X11_SYM(GC, XCreateGC, (Display *a, Drawable b, unsigned long c, XGCValues *d), (a, b, c, d), return)
+VOGL_X11_SYM(int, XDrawString, (Display *a, Drawable b, GC c, int d, int e, _Xconst char *f, int g), (a, b, c, d, e, f, g), return)
 
 typedef const GLubyte *(*GLAPIENTRY glGetString_func_ptr_t)(GLenum name);
 typedef Bool (*glXMakeCurrent_func_ptr_t)(Display *dpy, GLXDrawable drawable, GLXContext ctx);
@@ -120,7 +116,7 @@ static glinfo_cache_t *get_glinfo(Display *dpy, GLXDrawable drawable)
 
     glinfo_cache_t key;
 
-    SDL_memset(&key, 0, sizeof(key));
+    memset(&key, 0, sizeof(key));
     key.dpy = dpy;
     key.drawable = drawable;
 
@@ -181,7 +177,7 @@ static char *read_proc_file(const char *filename)
     }
 
     // Trim trailing whitespace.
-    while ((file_length > 0) && SDL_isspace(filedata[file_length - 1]))
+    while ((file_length > 0) && isspace(filedata[file_length - 1]))
         file_length--;
 
     filedata[file_length] = 0;
@@ -236,6 +232,34 @@ static int vogl_kbhit()
     return bytesWaiting;
 }
 
+// Copied from Linux SDL_Delay() routine.
+static void vogl_delay(unsigned int ms)
+{
+    int was_error;
+    struct timespec elapsed, tv;
+
+    elapsed.tv_sec = ms / 1000;
+    elapsed.tv_nsec = (ms % 1000) * 1000000;
+    do { 
+        errno = 0; 
+
+        tv.tv_sec = elapsed.tv_sec;
+        tv.tv_nsec = elapsed.tv_nsec;
+        was_error = nanosleep(&tv, &elapsed);
+    } while (was_error && (errno == EINTR));
+}
+
+static void *vogl_load_object(const char *sofile)
+{
+    return dlopen(sofile, RTLD_NOW | RTLD_LOCAL);                                                                                                                             
+}
+
+static void *vogl_load_function(void *handle, const char *name)
+{
+    // Handle appending an underscore for platforms that need that?
+    return dlsym(handle, name);
+}
+
 //----------------------------------------------------------------------------------------------------------------------
 // voglperf_init
 //----------------------------------------------------------------------------------------------------------------------
@@ -250,14 +274,14 @@ static void voglperf_init()
         // LOG_INFO, LOG_WARNING, LOG_ERR
         openlog(NULL, LOG_CONS | LOG_PERROR | LOG_PID, LOG_USER);
 
-        char *cmd_line = SDL_getenv("VOGLPERF_CMD_LINE");
+        char *cmd_line = getenv("VOGLPERF_CMD_LINE");
         if (cmd_line)
         {
             syslog(LOG_INFO, "(voglperf) built %s %s, begin initialization in %s\n", __DATE__, __TIME__, program_invocation_short_name);
             syslog(LOG_INFO, "(voglperf) VOGLPERF_CMD_LINE: '%s'\n", cmd_line);
 
             static const char s_msqid_arg[] = "--msqid=";
-            const char *msqid_str = SDL_strstr(cmd_line, s_msqid_arg);
+            const char *msqid_str = strstr(cmd_line, s_msqid_arg);
             if (msqid_str)
             {
                 int msqid = atoi(msqid_str + sizeof(s_msqid_arg) - 1);
@@ -276,10 +300,10 @@ static void voglperf_init()
                 }
             }
 
-            g_showfps = !!SDL_strstr(cmd_line, "--showfps");
-            g_verbose = !!SDL_strstr(cmd_line, "--verbose");
+            g_showfps = !!strstr(cmd_line, "--showfps");
+            g_verbose = !!strstr(cmd_line, "--verbose");
 
-            int debugger_pause = !!SDL_strstr(cmd_line, "--debugger-pause");
+            int debugger_pause = !!strstr(cmd_line, "--debugger-pause");
             if (debugger_pause && isatty(fileno(stdout)))
             {
                 int sleeptime = 60000;
@@ -290,7 +314,7 @@ static void voglperf_init()
 
                 while (sleeptime >= 0)
                 {
-                    SDL_Delay(200);
+                    vogl_delay(200);
                     sleeptime -= 200;
                     debugger_connected = vogl_is_debugger_present();
                     if (debugger_connected || vogl_kbhit())
@@ -304,7 +328,7 @@ static void voglperf_init()
             }
 
             static const char s_logfile_arg[] = "--logfile=";
-            const char *logfile = SDL_strstr(cmd_line, s_logfile_arg);
+            const char *logfile = strstr(cmd_line, s_logfile_arg);
             if (logfile)
             {
                 char logfile_name[PATH_MAX];
@@ -322,7 +346,7 @@ static void voglperf_init()
                 while (*logfile_end && (*logfile_end != delim_char))
                     logfile_end++;
 
-                SDL_snprintf(logfile_name, sizeof(logfile_name), "%.*s", (int)(logfile_end - logfile), logfile);
+                snprintf(logfile_name, sizeof(logfile_name), "%.*s", (int)(logfile_end - logfile), logfile);
                 syslog(LOG_INFO, "(voglperf)  Framerate logfile: '%s'\n", logfile_name);
 
                 g_logfile_fd = open(logfile_name, O_WRONLY | O_CREAT, 0666);
@@ -341,7 +365,7 @@ static void voglperf_init()
 
                     if (g_logfile_fd != -1)
                     {
-                        SDL_snprintf(g_logfile_buf, sizeof(g_logfile_buf),
+                        snprintf(g_logfile_buf, sizeof(g_logfile_buf),
                                      "# %s - %s\n",
                                      timebuf, program_invocation_short_name);
                         HANDLE_EINTR(write(g_logfile_fd, g_logfile_buf, strlen(g_logfile_buf)));
@@ -354,13 +378,13 @@ static void voglperf_init()
 
             if (g_showfps)
             {
-                void *handle = SDL_LoadObject("libX11.so.6");
+                void *handle = vogl_load_object("libX11.so.6");
                 if (handle)
                 {
 #define LOADX11FUNC(_func)                              \
     do                                                  \
     {                                                   \
-        X11_##_func = SDL_LoadFunction(handle, #_func); \
+        X11_##_func = vogl_load_function(handle, #_func); \
     } while (0)
                     LOADX11FUNC(XLoadQueryFont);
                     LOADX11FUNC(XCreateGC);
@@ -407,7 +431,7 @@ VOGL_API_EXPORT void *dlopen(const char *pFile, int mode)
 
 //----------------------------------------------------------------------------------------------------------------------
 // dlopen glXMakeCurrent
-//$ TODO: Need to hook glXMakeCurrentReadSGI_func_ptr_t
+//$ TODO: Need to hook glXMakeCurrentReadSGI_func_ptr_t?
 //----------------------------------------------------------------------------------------------------------------------
 VOGL_API_EXPORT Bool glXMakeCurrent(Display *dpy, GLXDrawable drawable, GLXContext ctx)
 {
@@ -505,7 +529,7 @@ static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_
 
         if (g_logfile_fd != -1)
         {
-            SDL_snprintf(g_logfile_buf + g_logfile_buf_len, sizeof(g_logfile_buf) - g_logfile_buf_len, "%.2f\n", time_frame * g_rcpMILLION);
+            snprintf(g_logfile_buf + g_logfile_buf_len, sizeof(g_logfile_buf) - g_logfile_buf_len, "%.2f\n", time_frame * g_rcpMILLION);
             g_logfile_buf_len += strlen(g_logfile_buf + g_logfile_buf_len);
         }
 
@@ -526,7 +550,7 @@ static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_
             mbuf.frame_min =s_frameinfo.frame_min * g_rcpMILLION;
             mbuf.frame_max = s_frameinfo.frame_max * g_rcpMILLION;
 
-            SDL_snprintf(s_frameinfo.text, sizeof(s_frameinfo.text),
+            snprintf(s_frameinfo.text, sizeof(s_frameinfo.text),
                          "%.2f fps frames:%u time:%.2fms min:%.2fms max:%.2fms",
                          mbuf.fps, mbuf.frame_count, mbuf.frame_time, mbuf.frame_min, mbuf.frame_max);
             syslog(LOG_INFO, "(voglperf) %s\n", s_frameinfo.text);

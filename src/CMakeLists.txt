@@ -19,7 +19,6 @@ add_shared_linker_flag("-Wl,--version-script=${PROJECT_SOURCE_DIR}/libvoglperf_l
 add_library(${PROJECT_NAME} SHARED ${SRC_LIST})
 
 target_link_libraries(${PROJECT_NAME}
-    libSDL2.a
     dl
     pthread
     rt

@@ -693,7 +693,8 @@ int main(int argc, char **argv)
     if (!(ld.args.flags & F_DRYRUN))
     {
         // And launch it...
-        system(ld.launch_cmd.c_str());
+        if (!system(ld.launch_cmd.c_str()))
+            errorf("ERROR: system(%s) failed: %s\n", ld.launch_cmd.c_str(), strerror(errno));
 
         // Try to retrieve frame rate data from game.
         retrieve_fps_data(ld);

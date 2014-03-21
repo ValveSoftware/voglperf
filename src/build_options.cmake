@@ -7,28 +7,27 @@
 #
 cmake_minimum_required(VERSION 2.8)
 
-option(BUILD_X64 "build 64-bit" FALSE)
-option(CMAKE_VERBOSE "Verbose CMake" FALSE)
-if( CMAKE_VERBOSE )
-    SET(CMAKE_VERBOSE_MAKEFILE ON)
+if( NOT DEFINED BUILD_X64 )
+    option(BUILD_X64 "build 64-bit" FALSE)
+    if( CMAKE_SIZEOF_VOID_P EQUAL 8 )
+        set(BUILD_X64 TRUE)
+    endif()
 endif()
-
-if( NOT BUILD_X64 )
-  # If we're in our 64-bit chroot, default to 64-bit, else 32-bit
-  if( "$ENV{SCHROOT_CHROOT_NAME}" STREQUAL "precise_amd64" )
-    set(BUILD_X64 "TRUE")
-  else()
-    set(BUILD_X64 "FALSE")
-  endif()
-endif( NOT BUILD_X64 )
 
 # Generate bitness suffix to use
 if (BUILD_X64)
+    message("Building 64-bit voglperf...")
     set(CMAKE_EXECUTABLE_SUFFIX 64)
     set(CMAKE_SHARED_LIBRARY_SUFFIX "64.so")
 else()
+    message("Building 32-bit voglperf...")
     set(CMAKE_EXECUTABLE_SUFFIX 32)
     set(CMAKE_SHARED_LIBRARY_SUFFIX "32.so")
+endif()
+
+option(CMAKE_VERBOSE "Verbose CMake" FALSE)
+if( CMAKE_VERBOSE )
+    SET(CMAKE_VERBOSE_MAKEFILE ON)
 endif()
 
 # Default to release build
