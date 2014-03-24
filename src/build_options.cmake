@@ -7,6 +7,9 @@
 #
 cmake_minimum_required(VERSION 2.8)
 
+option(CLANG_ANALYZE "Do clang analyze build" OFF)
+option(CLANG_EVERYTHING "Do clang build with -Weverything" OFF)
+
 if( NOT DEFINED BUILD_X64 )
     option(BUILD_X64 "build 64-bit" FALSE)
     if( CMAKE_SIZEOF_VOID_P EQUAL 8 )
@@ -64,7 +67,7 @@ if ("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
           "-Wno-padded"
           "-Wno-variadic-macros"
           )
-  elseif ()
+  elseif(CLANG_ANALYZE)
       set(CMAKE_CXX_FLAGS_LIST ${CMAKE_CXX_FLAGS_LIST}
           "--analyze"
           "-ferror-limit=0"         # Don't ever stop emitting diagnostics

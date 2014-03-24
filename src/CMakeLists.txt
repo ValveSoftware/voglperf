@@ -8,6 +8,8 @@ message("cmake options:")
 message("  -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}: Build debug or release. (debug|release)")
 message("  -DCMAKE_VERBOSE=${CMAKE_VERBOSE}: Spew cmake project options. (On|Off)")
 message("  -DBUILD_X64=${BUILD_X64}: Build 32 or 64-bit. (On|Off)")
+message("  -DCLANG_ANALYZE=[On|Off]: Do clang analyze build (will not link).")
+message("  -DCLANG_EVERYTHING=[On|Off]: Do clang build with -Weverything.")
 message("")
 
 set(SRC_LIST voglperf.c)

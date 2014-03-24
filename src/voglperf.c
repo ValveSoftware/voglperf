@@ -76,7 +76,6 @@ VOGL_X11_SYM(int, XDrawString, (Display *a, Drawable b, GC c, int d, int e, _Xco
 typedef const GLubyte *(*GLAPIENTRY glGetString_func_ptr_t)(GLenum name);
 typedef Bool (*glXMakeCurrent_func_ptr_t)(Display *dpy, GLXDrawable drawable, GLXContext ctx);
 typedef void (*glXSwapBuffers_func_ptr_t)(Display *dpy, GLXDrawable drawable);
-typedef void *(*dlopen_func_ptr_t)(const char *pFile, int mode);
 
 // Use get_glinfo() to get gl/vendor/renderer/version associated with dpy+drawable
 typedef struct glinfo_cache_t
@@ -405,32 +404,7 @@ static void voglperf_init()
 }
 
 //----------------------------------------------------------------------------------------------------------------------
-// dlopen interceptor
-//----------------------------------------------------------------------------------------------------------------------
-VOGL_API_EXPORT void *dlopen(const char *pFile, int mode)
-{
-    static dlopen_func_ptr_t s_pActual_dlopen;
-
-    if (!s_pActual_dlopen)
-    {
-        s_pActual_dlopen = (dlopen_func_ptr_t)dlsym(RTLD_NEXT, "dlopen");
-        if (!s_pActual_dlopen)
-            return NULL;
-    }
-
-    // WARNING. Be careful in here. Some libraries are open'd very early before the voglcore library heap
-    //  has been initialized...
-
-    if (g_verbose)
-    {
-        syslog(LOG_INFO, "(voglperf) %s %s %i\n", __PRETTY_FUNCTION__, pFile ? pFile : "(nullptr)", mode);
-    }
-
-    return (*s_pActual_dlopen)(pFile, mode);
-}
-
-//----------------------------------------------------------------------------------------------------------------------
-// dlopen glXMakeCurrent
+// glXMakeCurrent interceptor
 //$ TODO: Need to hook glXMakeCurrentReadSGI_func_ptr_t?
 //----------------------------------------------------------------------------------------------------------------------
 VOGL_API_EXPORT Bool glXMakeCurrent(Display *dpy, GLXDrawable drawable, GLXContext ctx)
@@ -524,22 +498,15 @@ static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_
     {
         uint64_t time_frame = time_cur - s_frameinfo.time_last_frame;
 
-        s_frameinfo.frame_count++;
-        s_frameinfo.time_benchmark += time_frame;
-
         if (g_logfile_fd != -1)
         {
+            // Add this frame time to our logfile.
             snprintf(g_logfile_buf + g_logfile_buf_len, sizeof(g_logfile_buf) - g_logfile_buf_len, "%.2f\n", time_frame * g_rcpMILLION);
             g_logfile_buf_len += strlen(g_logfile_buf + g_logfile_buf_len);
         }
 
-        if (s_frameinfo.frame_min > time_frame)
-            s_frameinfo.frame_min = time_frame;
-        if (s_frameinfo.frame_max < time_frame)
-            s_frameinfo.frame_max = time_frame;
-
-        // Check if one second has gone by.
-        if ((s_frameinfo.time_benchmark >= g_BILLION) || flush_logfile)
+        // If this time would push our total benchmark time over 1 second, spew out the benchmark data.
+        if (((s_frameinfo.time_benchmark + time_frame) >= g_BILLION) || flush_logfile)
         {
             struct mbuf_fps_t mbuf;
 
@@ -567,11 +534,6 @@ static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_
 
             if (g_logfile_fd != -1)
             {
-                char buf[256];
-
-                snprintf(buf, sizeof(buf), "# %s\n", s_frameinfo.text);
-                HANDLE_EINTR(write(g_logfile_fd, buf, strlen(buf)));
-
                 HANDLE_EINTR(write(g_logfile_fd, g_logfile_buf, g_logfile_buf_len));
                 g_logfile_buf_len = 0;
             }
@@ -582,6 +544,14 @@ static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_
             s_frameinfo.frame_max = 0;
             s_frameinfo.frame_count = 0;
         }
+
+        if (s_frameinfo.frame_min > time_frame)
+            s_frameinfo.frame_min = time_frame;
+        if (s_frameinfo.frame_max < time_frame)
+            s_frameinfo.frame_max = time_frame;
+
+        s_frameinfo.frame_count++;
+        s_frameinfo.time_benchmark += time_frame;
     }
 
     s_frameinfo.time_last_frame = time_cur;

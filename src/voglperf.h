@@ -26,7 +26,7 @@
 enum
 {
     MSGTYPE_PID = 1,
-    MSGTYPE_FPS = 2,
+    MSGTYPE_FPS = 2
 };
 
 struct mbuf_pid_t

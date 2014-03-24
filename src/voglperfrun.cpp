@@ -82,7 +82,7 @@ struct launch_data_t
 //----------------------------------------------------------------------------------------------------------------------
 // errorf
 //----------------------------------------------------------------------------------------------------------------------
-static void errorf(const char *format, ...)
+static void __attribute__ ((noreturn)) errorf(const char *format, ...)
 {
     va_list args;
 
@@ -133,7 +133,6 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
             }
 
             exit(0);
-            break;
 
         case -1:
             arguments->cmdline += " ";
@@ -693,7 +692,10 @@ int main(int argc, char **argv)
     if (!(ld.args.flags & F_DRYRUN))
     {
         // And launch it...
-        if (!system(ld.launch_cmd.c_str()))
+        // system returns -1 on error, otherwise return status of command.
+        errno = 0;
+        int ret = system(ld.launch_cmd.c_str());
+        if ((ret == -1) && errno)
             errorf("ERROR: system(%s) failed: %s\n", ld.launch_cmd.c_str(), strerror(errno));
 
         // Try to retrieve frame rate data from game.
