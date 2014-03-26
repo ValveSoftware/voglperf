@@ -29,7 +29,9 @@ target_link_libraries(${PROJECT_NAME}
 
 project(voglperfrun)
 
-set(SRC_LIST voglperfrun.cpp)
+set(SRC_LIST
+    voglperfrun.cpp
+    webby/webby.c)
 
 add_executable(${PROJECT_NAME} ${SRC_LIST})
 

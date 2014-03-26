@@ -31,9 +31,15 @@
 #include <unistd.h>
 #include <libgen.h>
 #include <argp.h>
+#include <signal.h>
 
 #include <fcntl.h>
 #include <sys/msg.h>
+
+#include <ifaddrs.h>
+#include <netinet/in.h> 
+#include <arpa/inet.h>
+#include <net/if.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -41,11 +47,17 @@
 #include <string>
 #include <vector>
 
+#include "webby/webby.h"
+
 #include "voglperf.h"
 
-#define F_DRYRUN 0x00000001
-#define F_LDDEBUGSPEW 0x00000002
-#define F_XTERM 0x00000004
+#define F_DRYRUN        0x00000001
+#define F_LDDEBUGSPEW   0x00000002
+#define F_XTERM         0x00000004
+#define F_VERBOSE       0x00000008
+#define F_FPS           0x00000010
+
+//$ TODO: limit text length in message field in index.html?
 
 struct gameid_t
 {
@@ -59,7 +71,7 @@ struct arguments_t
     std::string cmdline;    // Command line arguments for VOGL_CMD_LINE (--showfps, etc.)
     std::string logfile;    // Logfile name.
     std::string gameid;     // Game id from command line.
-    std::string prog_args;     // arguments for the "gameid"
+    std::string prog_args;  // arguments for the "gameid"
 
     // Array of game ids and names. Usually read from appids.txt.
     bool appids_file_found;
@@ -71,16 +83,35 @@ struct launch_data_t
     int msqid;              // Our message queue id. Used to communicate with libvoglperf.so.
     bool is_local_file;     // true if we're launching a local file, false if it's a steam game.
 
+    std::string ipaddr;
+    std::string port;
+
     arguments_t args;       // Command line arguments.
     std::string gameid_str; // game name or "gameid##" if not known.
     std::string LD_PRELOAD; // LD_PRELOAD string.
     std::string VOGL_CMD_LINE; // VOGL_CMD_LINE string.
     std::string launch_cmd; // Game launch command.
-    std::string prog_args; // args passed to the program to benchmark
+    std::string prog_args;  // args passed to the program to benchmark
 };
 
+struct webby_data_t
+{
+    // Maximum WebSocket connections.
+    enum { MAX_WSCONN = 8 };
+    std::vector<WebbyConnection *> ws_connections;
+    
+    // Command strings sent from websocket interfaces.
+    std::vector<std::string> ws_commands;
+
+    void *memory;
+    int memory_size;
+    struct WebbyServer *server;
+    struct WebbyServerConfig config;
+};
+static webby_data_t g_webby_data;
+
 //----------------------------------------------------------------------------------------------------------------------
-// errorf
+// Spew out error and die.
 //----------------------------------------------------------------------------------------------------------------------
 static void __attribute__ ((noreturn)) errorf(const char *format, ...)
 {
@@ -94,6 +125,82 @@ static void __attribute__ ((noreturn)) errorf(const char *format, ...)
 }
 
 //----------------------------------------------------------------------------------------------------------------------
+// Read in file.
+//----------------------------------------------------------------------------------------------------------------------
+static std::string get_file_contents(const char *filename)
+{
+    FILE *fp = fopen(filename, "rb");
+    if (fp)
+    {
+        std::string str;
+
+        fseek(fp, 0, SEEK_END);
+        str.resize(ftell(fp));
+        rewind(fp);
+
+        fread(&str[0], 1, str.size(), fp);
+        fclose(fp);
+        return str;
+    }
+
+    return "";
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// Printf style formatting for std::string.
+//----------------------------------------------------------------------------------------------------------------------
+static std::string string_format(const char *fmt, ...) 
+{
+    std::string str; 
+    int size = 256; 
+
+    for (;;) 
+    {    
+        va_list ap;
+
+        va_start(ap, fmt);
+        str.resize(size);
+        int n = vsnprintf((char *)str.c_str(), size, fmt, ap); 
+        va_end(ap);
+
+        if ((n > -1) && (n < size))
+        {
+            str.resize(n);
+            return str; 
+        }
+
+        size = (n > -1) ? (n + 1) : (size * 2);
+    }    
+
+    return str; 
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// string_split: split str by delims into args.
+//   http://stackoverflow.com/questions/53849/how-do-i-tokenize-a-string-in-c 
+//----------------------------------------------------------------------------------------------------------------------
+static void string_split(std::vector<std::string>& args, const std::string& str, const std::string& delims)
+{
+    size_t start = 0;
+    size_t end = 0;
+
+    while (end != std::string::npos)
+    {
+        end = str.find(delims, start);
+
+        // If at end, use length = maxLength, else use length = end - start.
+        args.push_back(str.substr(start, (end == std::string::npos) ? std::string::npos : end - start));
+
+        // If at end, use start = maxSize, else use start = end + delimiter.
+        start = ((end > (std::string::npos - delims.size())) ? std::string::npos : end + delims.size());
+    }
+
+    // Make sure we have at least two args.
+    args.push_back("");
+    args.push_back("");
+}
+
+//----------------------------------------------------------------------------------------------------------------------
 // parse_opt
 //----------------------------------------------------------------------------------------------------------------------
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
@@ -103,69 +210,67 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
     switch (key)
     {
-        case 0:
-            if (arg && arg[0])
+    case 0:
+        if (arg && arg[0])
+        {
+            if (arguments->gameid.size())
             {
-                if (arguments->gameid.size())
-                {
-                    //fprintf(stderr, "\nERROR: Unknown argument: %s\n\n", arg);
-                    //argp_state_help(state, stderr, ARGP_HELP_LONG | ARGP_HELP_EXIT_OK);
-                    // These are actually arguments to our program, e.g. if the user wants to run "voglperfrun -- glxgears -info", here we get "-info"
-                    arguments->prog_args += std::string(" \"") + state->argv[state->next - 1] + "\"";
-                }
-                else {
-                    arguments->gameid = arg;
-                }
+                // These are arguments to our program, e.g. if the user wants to run:
+                //   "voglperfrun -- glxgears -info",
+                // we get "-info".
+                arguments->prog_args += std::string(" \"") + state->argv[state->next - 1] + "\"";
             }
-            break;
-
-        case '?':
-            fprintf(stdout, "\nUsage:\n");
-            fprintf(stdout, "  %s [options] [SteamGameID | ExecutableName]\n", program_invocation_short_name);
-
-            fprintf(stdout, "\n");
-            argp_state_help(state, stdout, ARGP_HELP_LONG);
-
-            fprintf(stdout, "\nGameIDS (please see the appids.txt file to modify this list):\n");
-            for (size_t i = 0; i < arguments->installed_games.size(); i++)
+            else
             {
-                fprintf(stdout, "  %-6u - %s\n", arguments->installed_games[i].id, arguments->installed_games[i].name.c_str());
+                arguments->gameid = arg;
             }
+        }
+        break;
 
-            exit(0);
+    case '?':
+        fprintf(stdout, "\nUsage:\n");
+        fprintf(stdout, "  %s [options] [SteamGameID | ExecutableName]\n", program_invocation_short_name);
 
-        case -1:
-            arguments->cmdline += " ";
-            arguments->cmdline += state->argv[state->next - 1];
-            break;
+        fprintf(stdout, "\n");
+        argp_state_help(state, stdout, ARGP_HELP_LONG);
 
-        case 'l':
-            // If no argument was included, set logfile to '.' and we'll create our name later.
-            if (arg && (arg[0] == '='))
-                arg++;
-            arguments->logfile = arg ? arg : ".";
-            break;
-        case 'y':
-            arguments->flags |= F_DRYRUN;
-            break;
-        case 'd':
-            arguments->flags |= F_LDDEBUGSPEW;
-            break;
-        case 'x':
-            arguments->flags |= F_XTERM;
-            break;
+        fprintf(stdout, "\nGameIDS (please see the appids.txt file to modify this list):\n");
+        for (size_t i = 0; i < arguments->installed_games.size(); i++)
+        {
+            fprintf(stdout, "  %-6u - %s\n", arguments->installed_games[i].id, arguments->installed_games[i].name.c_str());
+        }
 
-        case -2:
-            // --show-type-list: Whitespaced list of options for bash autocomplete.
-            for (size_t i = 0;; i++)
-            {
-                const char *name = state->root_argp->options[i].name;
-                if (!name)
-                    break;
+        exit(0);
 
-                printf("--%s ", name);
-            }
-            exit(0);
+    case -1:
+        arguments->cmdline += " ";
+        arguments->cmdline += state->argv[state->next - 1];
+        break;
+
+    case 'l':
+        // If no argument was included, set logfile to '.' and we'll create our name later.
+        if (arg && (arg[0] == '='))
+            arg++;
+        arguments->logfile = arg ? arg : ".";
+        break;
+
+    case 'y': arguments->flags |= F_DRYRUN; break;
+    case 'd': arguments->flags |= F_LDDEBUGSPEW; break;
+    case 'x': arguments->flags |= F_XTERM; break;
+    case 'f': arguments->flags |= F_FPS; break;
+    case 'v': arguments->flags |= F_VERBOSE; break;
+
+    case -2:
+        // --show-type-list: Whitespaced list of options for bash autocomplete.
+        for (size_t i = 0;; i++)
+        {
+            const char *name = state->root_argp->options[i].name;
+            if (!name)
+                break;
+
+            printf("--%s ", name);
+        }
+        exit(0);
     }
 
     return 0;
@@ -402,6 +507,31 @@ static void init_gameid_str(launch_data_t &ld)
 }
 
 //----------------------------------------------------------------------------------------------------------------------
+// get_logfile_name
+//----------------------------------------------------------------------------------------------------------------------
+static std::string get_logfile_name(launch_data_t &ld)
+{
+    char timestr[128];
+    time_t t = time(NULL);
+
+    timestr[0] = 0;
+    struct tm *tmp = localtime(&t);
+    if (tmp)
+    {
+        strftime(timestr, sizeof(timestr), "%Y_%m_%d-%H_%M_%S", tmp);
+    }
+
+    std::string gameid_str = ld.gameid_str;
+    for (size_t i = 0; i < gameid_str.size(); i++)
+    {
+        if (isspace(gameid_str[i]) || ispunct(gameid_str[i]))
+            gameid_str[i] = '-';
+    }
+
+    return string_format("%s/voglperf.%s.%s.csv", P_tmpdir, gameid_str.c_str(), timestr);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
 // init_logfile
 //----------------------------------------------------------------------------------------------------------------------
 static void init_logfile(launch_data_t &ld)
@@ -409,26 +539,7 @@ static void init_logfile(launch_data_t &ld)
     // If it's a '.', then no arg was supplied and we come up with our own logfile name.
     if (ld.args.logfile == ".")
     {
-        char timestr[128];
-        time_t t = time(NULL);
-
-        timestr[0] = 0;
-        struct tm *tmp = localtime(&t);
-        if (tmp)
-        {
-            strftime(timestr, sizeof(timestr), "%Y_%m_%d-%H_%M_%S", tmp);
-        }
-
-        std::string gameid_str = ld.gameid_str;
-        for (size_t i = 0; i < gameid_str.size(); i++)
-        {
-            if (isspace(gameid_str[i]))
-                gameid_str[i] = '-';
-        }
-
-        char buf[PATH_MAX];
-        snprintf(buf, sizeof(buf), "%s/voglperf.%s.%s.csv", P_tmpdir, gameid_str.c_str(), timestr);
-        ld.args.logfile = buf;
+        ld.args.logfile = get_logfile_name(ld);
     }
 
     // Get a full path for our log file as steam will launch in a different directory.
@@ -543,10 +654,452 @@ static void init_launch_cmd(launch_data_t &ld)
     else
     {
         ld.launch_cmd = ld.VOGL_CMD_LINE + " " + ld.LD_PRELOAD + " \"" + ld.args.gameid + "\" " + ld.prog_args;
-
     }
 
     printf("\nLaunch string:\n  %s\n", ld.launch_cmd.c_str());
+}
+
+//----------------------------------------------------------------------------------------------------------------------                                                            
+// Print string to websocket connections and stdout.
+//----------------------------------------------------------------------------------------------------------------------
+static void webby_printf(const char *format, ...)
+{
+    va_list args;
+    char buffer[4096];
+
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+
+    // Print to stdout
+    printf("%s", buffer);
+
+    // And to webby...
+    if (g_webby_data.ws_connections.size())
+    {
+        int buffer_len = (int)strlen(buffer);
+
+        for (size_t i = 0; i < g_webby_data.ws_connections.size(); ++i)
+        {
+            WebbyBeginSocketFrame(g_webby_data.ws_connections[i], WEBBY_WS_OP_TEXT_FRAME);
+            WebbyWrite(g_webby_data.ws_connections[i], buffer, buffer_len);
+            WebbyEndSocketFrame(g_webby_data.ws_connections[i]);
+        }
+    }
+}
+   
+//----------------------------------------------------------------------------------------------------------------------
+// webby_log
+//----------------------------------------------------------------------------------------------------------------------
+static void webby_log(const char* text)
+{
+    printf("[webby] %s\n", text);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// webby_dispatch
+//----------------------------------------------------------------------------------------------------------------------
+static int webby_dispatch(struct WebbyConnection *connection)
+{
+    static const char logfile_prefix[] = "/logfile";
+    static const std::string logfile_str = string_format("%s%s/voglperf.", logfile_prefix, P_tmpdir);
+
+    if (!strncmp(logfile_str.c_str(), connection->request.uri, logfile_str.size()))
+    {
+        std::string file = get_file_contents(connection->request.uri + sizeof(logfile_prefix) - 1);
+
+#if 1
+           static const struct WebbyHeader headers[] =
+           {
+             { "Content-Type", "text/plain" },
+           }; 
+           
+        WebbyBeginResponse(connection, 200, file.size(), headers, 1);
+        WebbyWrite(connection, file.c_str(), file.size());
+        WebbyEndResponse(connection);
+#else
+        size_t size = file.size();
+        const char *data = file.c_str();
+
+        printf("size: %d\n", size);
+        
+        WebbyBeginResponse(connection, 200, -1, NULL, 0);
+        while(size)
+        {
+            size_t chunk = (size > 16*1024) ? 16*1024 : size;
+
+            printf("writing chunk: %d\n", chunk);
+            WebbyWrite(connection, data, chunk);
+            data += chunk;
+            size -= chunk;
+        printf("size: %d\n", size);
+        }
+        WebbyEndResponse(connection);
+#endif
+        return 0;
+    }
+    else
+    {
+        std::string index_html = get_file_contents("index.html");
+
+        if (index_html.size() > 0)
+        {
+            WebbyBeginResponse(connection, 200, index_html.size(), NULL, 0);
+            WebbyWrite(connection, index_html.c_str(), index_html.size());
+            WebbyEndResponse(connection);
+        }
+        else
+        {
+            WebbyBeginResponse(connection, 200, -1, NULL, 0);
+            WebbyPrintf(connection, "%s\n", "ERROR: Could not read index.html");
+            WebbyEndResponse(connection);
+        }
+        return 0;
+    }
+
+    return 1;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// webby_ws_connect
+//----------------------------------------------------------------------------------------------------------------------
+static int webby_ws_connect(struct WebbyConnection *connection)
+{
+    // Allow websocket upgrades on /ws.
+    if (!strcmp(connection->request.uri, "/ws"))
+    {
+        if (g_webby_data.ws_connections.size() >= webby_data_t::MAX_WSCONN)
+        {
+            printf("[webby] WARNING: No more websocket connections left (%d).\n", webby_data_t::MAX_WSCONN);
+            return 1;
+        }
+
+        return 0;
+    }
+
+    return 1;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// webby_ws_connected
+//----------------------------------------------------------------------------------------------------------------------
+static void webby_ws_connected(struct WebbyConnection *connection)
+{
+    g_webby_data.ws_connections.push_back(connection);
+
+    printf("[webby] WebSocket connected %s on %s\n", connection->request.method, connection->request.uri);
+
+    launch_data_t *ld = (launch_data_t *)connection->user_data;
+    webby_printf("Welcome!\n");
+    webby_printf("%s\n", ld ? ld->launch_cmd.c_str() : "ERROR: Can't determine voglperf cmd line.");
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// webby_ws_closed
+//----------------------------------------------------------------------------------------------------------------------
+static void webby_ws_closed(struct WebbyConnection *connection)
+{
+    printf("[webby] WebSocket closed %s on %s\n", connection->request.method, connection->request.uri);
+
+    for (size_t i = 0; i < g_webby_data.ws_connections.size(); i++)
+    {
+        if (g_webby_data.ws_connections[i] == connection)
+        {
+            g_webby_data.ws_connections.erase(g_webby_data.ws_connections.begin() + i);
+            break;
+        }
+    }
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// webby_ws_frame
+//----------------------------------------------------------------------------------------------------------------------
+static int webby_ws_frame(struct WebbyConnection *connection, const struct WebbyWsFrame *frame)
+{
+    launch_data_t *ld = (launch_data_t *)connection->user_data;
+    bool verbose = (ld && (ld->args.flags & F_VERBOSE));
+
+    if (verbose)
+    {
+        printf("WebSocket frame incoming\n");
+        printf("  Frame OpCode: %d\n", frame->opcode);
+        printf("  Final frame?: %s\n", (frame->flags & WEBBY_WSF_FIN) ? "yes" : "no");
+        printf("  Masked?     : %s\n", (frame->flags & WEBBY_WSF_MASKED) ? "yes" : "no");
+        printf("  Data Length : %d\n", (int) frame->payload_length);
+    }
+
+    std::string command;
+    
+    int i = 0;
+    while (i < frame->payload_length)
+    {
+        unsigned char buffer[16];
+        int remain = frame->payload_length - i;
+        size_t read_size = remain > (int) sizeof(buffer) ? sizeof(buffer) : (size_t)remain;
+        size_t k;
+
+        if (verbose)
+        {
+            printf("%08x ", (int) i);
+        }
+
+        if (0 != WebbyRead(connection, buffer, read_size))
+            break;
+
+        if (verbose)
+        {
+            for (k = 0; k < read_size; ++k)
+                printf("%02x ", buffer[k]);
+
+            for (k = read_size; k < 16; ++k)
+                printf("   ");
+
+            printf(" | ");
+
+            for (k = 0; k < read_size; ++k)
+                printf("%c", isprint(buffer[k]) ? buffer[k] : '?');
+
+            printf("\n");
+        }
+
+        command += std::string((char *)buffer, read_size);
+        
+        i += read_size;
+    }
+
+    g_webby_data.ws_commands.push_back(command);
+    return 0;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// webby_start
+//----------------------------------------------------------------------------------------------------------------------
+static int webby_start(launch_data_t &ld)
+{
+    memset(&g_webby_data.config, 0, sizeof(g_webby_data.config));
+
+    g_webby_data.config.user_data = &ld;
+    g_webby_data.config.bind_address = ld.ipaddr.c_str();
+    g_webby_data.config.listening_port = atoi(ld.port.c_str());
+    g_webby_data.config.flags = WEBBY_SERVER_WEBSOCKETS;
+    g_webby_data.config.connection_max = 4;
+    g_webby_data.config.request_buffer_size = 2048;
+    g_webby_data.config.io_buffer_size = 8192;
+    g_webby_data.config.dispatch = &webby_dispatch;
+    g_webby_data.config.log = &webby_log;
+    g_webby_data.config.ws_connect = &webby_ws_connect;
+    g_webby_data.config.ws_connected = &webby_ws_connected;
+    g_webby_data.config.ws_closed = &webby_ws_closed;
+    g_webby_data.config.ws_frame = &webby_ws_frame;
+
+    if (ld.args.flags & F_VERBOSE)
+    {
+        g_webby_data.config.flags |= WEBBY_SERVER_LOG_DEBUG;
+    }
+
+    g_webby_data.memory_size = WebbyServerMemoryNeeded(&g_webby_data.config);
+    g_webby_data.memory = malloc(g_webby_data.memory_size);
+    g_webby_data.server = WebbyServerInit(&g_webby_data.config, g_webby_data.memory, g_webby_data.memory_size);
+
+    if (!g_webby_data.server)
+    {
+        fprintf(stderr, "WARNING: Web server failed to initialize.\n");
+        return -1;
+    }
+
+    printf("Started http://%s:%u\n\n", g_webby_data.config.bind_address, g_webby_data.config.listening_port);
+    return 0;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// webby_update
+//----------------------------------------------------------------------------------------------------------------------
+static void webby_update(launch_data_t &ld)
+{
+    if (g_webby_data.server)
+    {
+        WebbyServerUpdate(g_webby_data.server);
+    }
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// webby_end
+//----------------------------------------------------------------------------------------------------------------------
+static void webby_end(launch_data_t &ld)
+{
+    g_webby_data.ws_connections.empty();
+
+    if (g_webby_data.server)
+    {
+        WebbyServerShutdown(g_webby_data.server);
+        g_webby_data.server = NULL;
+    }
+
+    if (g_webby_data.memory)
+    {
+        free(g_webby_data.memory);
+        g_webby_data.memory = NULL;
+        g_webby_data.memory_size = 0;
+    }
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// retrieve_app_output
+//----------------------------------------------------------------------------------------------------------------------
+static FILE *retrieve_app_output(FILE *file, int fileid)
+{
+    if (file)
+    {
+        for(;;)
+        {
+            char buf[4096 + 1];
+
+            // Try to read from command pipe.
+            ssize_t r = read(fileid, buf, sizeof(buf) - 1);
+
+            if ((r == -1) && (errno == EAGAIN))
+            {
+                // No data.
+                break;
+            }
+            else if (r > 0)
+            {
+                // Got some data.
+                buf[r] = 0;
+                printf("%s\n", buf);
+            }
+            else
+            {
+                // Pipe is closed:
+                pclose(file);
+                file = NULL;
+                break;
+            }
+        }
+    }
+
+    return file;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// handle_webby_command
+//----------------------------------------------------------------------------------------------------------------------
+bool handle_webby_command(uint64_t pid, launch_data_t &ld)
+{
+    bool ret = true;
+    static const struct
+    {
+        const char *command;
+        const char *description;
+    } s_commands[] =
+    {
+        { "help", ": This help." },
+        { "quit", ": Quit voglperfrun." },
+        { "game exit", ": Send SIGTERM signal to game." },
+        { "logfile start filename [seconds]", ": Start capturing frame time data to filename." },
+        { "logfile stop", ": Stop capturing frame time data." },
+        { "fps", "[on|off]: Turn fps logging on/off." },
+    };
+
+    for (size_t i = 0; i < g_webby_data.ws_commands.size(); i++)
+    {
+        bool handled = false;
+        std::vector<std::string> args;
+
+        std::string &command = g_webby_data.ws_commands[i];
+
+        printf("WebSocket CMD: '%s'\n", command.c_str());
+
+        string_split(args, command, " ");
+
+        if (args[0] == "help")
+        {
+            for (size_t c = 0; c < g_webby_data.ws_connections.size(); ++c)
+            {
+                WebbyConnection *conn = g_webby_data.ws_connections[c];
+
+                WebbyBeginSocketFrame(conn, WEBBY_WS_OP_TEXT_FRAME);
+
+                WebbyPrintf(conn, "<pre>Commands:\n");
+                for (size_t i = 0; i < sizeof(s_commands) / sizeof(s_commands[0]); i++)
+                {
+                    WebbyPrintf(conn, " %s%s\n", s_commands[i].command, s_commands[i].description);
+                }
+                WebbyPrintf(conn, "</pre>");
+
+                WebbyEndSocketFrame(conn);
+            }
+
+            handled = true;
+        }
+        else if (args[0] == "quit")
+        {
+            webby_printf("Quitting...\n");
+            ret = false;
+
+            handled = true;
+        }
+        else if ((args[0] == "game") && (args[1] == "exit"))
+        {
+            webby_printf("Exiting game...\n");
+
+            int ret = kill(pid, SIGTERM);
+            printf("signal(%" PRIu64 ", SIGKILL): %s\n", pid, (ret ? strerror(errno) : "Success"));
+
+            handled = true;
+        }
+        else if (args[0] == "logfile")
+        {
+            if (args[1] == "start")
+            {
+                mbuf_logfile_start_t mbuf;
+                std::string logfile = get_logfile_name(ld);
+
+                mbuf.mtype = MSGTYPE_LOGFILE_START;
+
+                strncpy(mbuf.logfile, logfile.c_str(), sizeof(mbuf.logfile));
+                mbuf.logfile[sizeof(mbuf.logfile) - 1] = 0;
+                mbuf.time = (uint64_t)atoi(args[2].c_str());
+
+                int ret = msgsnd(ld.msqid, &mbuf, sizeof(mbuf) - sizeof(mbuf.mtype), IPC_NOWAIT);
+                if (ret == -1)
+                    webby_printf("ERROR: msgsnd failed: %s\n", strerror(errno));
+
+                handled = true;
+            }
+            else if (args[1] == "stop")
+            {
+                mbuf_logfile_stop_t mbuf;
+
+                mbuf.mtype = MSGTYPE_LOGFILE_STOP;
+                mbuf.logfile[0] = 0;
+
+                int ret = msgsnd(ld.msqid, &mbuf, sizeof(mbuf) - sizeof(mbuf.mtype), IPC_NOWAIT);
+                if (ret == -1)
+                    webby_printf("ERROR: msgsnd failed: %s\n", strerror(errno));
+
+                handled = true;
+            }
+        }
+        else if (command == "fps off")
+        {
+            ld.args.flags &= ~F_FPS;
+            handled = true;
+        }
+        else if (command == "fps on")
+        {
+            ld.args.flags |= F_FPS;
+            handled = true;
+        }
+
+        if (!handled)
+        {
+            webby_printf("ERROR: Unknown command '%s'.\n", command.c_str());
+        }
+    }
+    g_webby_data.ws_commands.clear();
+
+    return ret;
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -554,8 +1107,23 @@ static void init_launch_cmd(launch_data_t &ld)
 //----------------------------------------------------------------------------------------------------------------------
 static void retrieve_fps_data(launch_data_t &ld)
 {
+    // Launch it.
+    FILE *file = popen((ld.launch_cmd + " 2>&1").c_str(), "r");
+    if (!file)
+        errorf("ERROR: peopen(%s) failed: %s\n", ld.launch_cmd.c_str(), strerror(errno));
+
+    // Set FILE to non-blocking.
+    int fileid = fileno(file);
+    fcntl(fileid, F_SETFL, O_NONBLOCK);
+
+    file = retrieve_app_output(file, fileid);
+    webby_update(ld);
+
     if (ld.msqid != -1)
     {
+        printf("\nStarting web server...\n");
+        webby_start(ld);
+
         printf("Waiting for child process to start...\n");
 
         // Try to get the MSGTYPE_PID message for ~ 30 seconds.
@@ -569,62 +1137,157 @@ static void retrieve_fps_data(launch_data_t &ld)
             usleep(500 * 1000);
             sleeptime -= 500;
 
-            if (msgrcv(ld.msqid, &mbuf, sizeof(mbuf), MSGTYPE_PID, IPC_NOWAIT) != -1)
+            if (msgrcv(ld.msqid, &mbuf, sizeof(mbuf), MSGTYPE_PID_NOTIFY, IPC_NOWAIT) != -1)
             {
                 pid = mbuf.pid;
                 break;
             }
+
+            // Check web for updates.
+            file = retrieve_app_output(file, fileid);
+            webby_update(ld);
         }
 
         if (pid == (uint64_t)-1)
         {
             // If we never got the pid message then bail.
             printf(" ERROR: Child process not found. msgrcv() failed.\n");
-            return;
         }
-
-        // Found our child. Grab the FPS messages and spew them out.
-        std::string banner(78, '#');
-
-        printf("\n%s\n", banner.c_str());
-        printf("Voglperf framerates from pid %" PRIu64 ".\n", pid);
-        printf("%s\n", banner.c_str());
-
-        char proc_status_file[PATH_MAX];
-        snprintf(proc_status_file, sizeof(proc_status_file), "/proc/%" PRIu64 "/status", pid);
-
-        for(;;)
+        else
         {
-            struct mbuf_fps_t mbuf;
+            // Found our child. Grab the FPS messages and spew them out.
+            std::string banner(78, '#');
 
-            // Try to get any FPS type messages.
-			int ret = msgrcv(ld.msqid, &mbuf, sizeof(mbuf) - sizeof(mbuf.mtype), MSGTYPE_FPS, IPC_NOWAIT);
-            if (ret == -1)
+            printf("\n%s\n", banner.c_str());
+            printf("Voglperf framerates from pid %" PRIu64 ".\n", pid);
+            printf("%s\n", banner.c_str());
+
+            char proc_status_file[PATH_MAX];
+            snprintf(proc_status_file, sizeof(proc_status_file), "/proc/%" PRIu64 "/status", pid);
+
+            for(;;)
             {
-                // Failed. Double check that the game is still running.
-                if (access(proc_status_file, F_OK) != 0)
-                    break;
+                struct mbuf_fps_t mbuf;
+                struct mbuf_logfile_start_t mbuf_start;
+                struct mbuf_logfile_stop_t mbuf_stop;
 
-                // Pause for half a second.
-                usleep(500 * 1000);
-            }
-            else
-            {
-                // Frame count of -1 comes in when vogl_perf_destructor_func() is called and the
-                //  game has exited.
-                if (mbuf.frame_count == (uint32_t)-1)
-                    break;
+                // Try to get any FPS type messages.
+                int ret = msgrcv(ld.msqid, &mbuf, sizeof(mbuf) - sizeof(mbuf.mtype), MSGTYPE_FPS_NOTIFY, IPC_NOWAIT);
+                if (ret == -1)
+                {
+                    // Failed. Double check that the game is still running.
+                    if (access(proc_status_file, F_OK) != 0)
+                        break;
 
-                // Spew this message.
-                printf("%.2f fps frames:%u time:%.2fms min:%.2fms max:%.2fms\n",
-                       mbuf.fps, mbuf.frame_count, mbuf.frame_time, mbuf.frame_min, mbuf.frame_max);
+                    // Pause for half a second.
+                    usleep(500 * 1000);
+                }
+                else
+                {
+                    // Frame count of -1 comes in when vogl_perf_destructor_func() is called and the
+                    //  game has exited.
+                    if (mbuf.frame_count == (uint32_t)-1)
+                        break;
+
+                    // Spew this message.
+                    if (ld.args.flags & F_FPS)
+                    {
+                        webby_printf("%.2f fps frames:%u time:%.2fms min:%.2fms max:%.2fms\n",
+                                     mbuf.fps, mbuf.frame_count, mbuf.frame_time, mbuf.frame_min, mbuf.frame_max);
+                    }
+                }
+
+                ret = msgrcv(ld.msqid, &mbuf_start, sizeof(mbuf_start) - sizeof(mbuf_start.mtype), MSGTYPE_LOGFILE_START_NOTIFY, IPC_NOWAIT);
+                if (ret != -1)
+                {
+                    std::string time = mbuf_start.time ? string_format(" (%" PRId64 " seconds).", mbuf_start.time) : "";
+                    webby_printf("Logfile started: %s%s\n", mbuf_start.logfile, time.c_str());
+                }
+                    
+                ret = msgrcv(ld.msqid, &mbuf_stop, sizeof(mbuf_stop) - sizeof(mbuf_stop.mtype), MSGTYPE_LOGFILE_STOP_NOTIFY, IPC_NOWAIT);
+                if (ret != -1)
+                {
+                    std::string url = string_format("http://%s:%s/logfile%s\n", ld.ipaddr.c_str(), ld.port.c_str(), mbuf_stop.logfile);
+                    webby_printf("Logfile stopped: <a href=\"%s\">%s</a>\n", url.c_str(), url.c_str());
+                }
+
+                // Check web for updates.
+                file = retrieve_app_output(file, fileid);
+                webby_update(ld);
+                
+                if (!handle_webby_command(pid, ld))
+                    break;
             }
+
+            // Destroy our message queue.            
+            msgctl(ld.msqid, IPC_RMID, NULL);
+            ld.msqid = -1;
         }
 
-        // Destroy our message queue.            
-        msgctl(ld.msqid, IPC_RMID, NULL);
-        ld.msqid = -1;
+        while (file) 
+        {
+            file = retrieve_app_output(file, fileid);
+            webby_update(ld);
+        }
+
+        // Update and terminate web server.
+        webby_update(ld);
+        webby_end(ld);
     }
+    
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// get_ip_addr
+//   http://stackoverflow.com/questions/212528/get-the-ip-address-of-the-machine/3120382#3120382 
+//----------------------------------------------------------------------------------------------------------------------
+std::string get_ip_addr()
+{
+    std::string ret4;
+    std::string ret6;
+    struct ifaddrs * ifAddrStruct = NULL;
+
+    getifaddrs(&ifAddrStruct);
+
+    for (struct ifaddrs *ifa = ifAddrStruct; ifa; ifa = ifa->ifa_next)
+    {
+        if (ifa ->ifa_addr->sa_family == AF_INET)
+        {
+            // IP4 address.
+            char addressBuffer[INET_ADDRSTRLEN];
+            void *tmpAddrPtr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+
+            inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+
+            if (!(ifa->ifa_flags & IFF_LOOPBACK) || !ret4.length())
+                ret4 = addressBuffer;
+        }
+        else if (ifa->ifa_addr->sa_family == AF_INET6)
+        {
+            // IP6 address.
+            char addressBuffer[INET6_ADDRSTRLEN];
+            void *tmpAddrPtr=&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
+
+            inet_ntop(AF_INET6, tmpAddrPtr, addressBuffer, INET6_ADDRSTRLEN);
+
+            if (!(ifa->ifa_flags & IFF_LOOPBACK) || !ret6.length())
+                ret6 = addressBuffer;
+        } 
+    }
+
+    if (ifAddrStruct)
+    {
+        freeifaddrs(ifAddrStruct);
+        ifAddrStruct = NULL;
+    }
+
+    // Prefer IP4?
+    if (ret4.length())
+        return ret4;
+    else if(ret6.length())
+        return ret6;
+
+    return "127.0.0.1";
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -632,29 +1295,35 @@ static void retrieve_fps_data(launch_data_t &ld)
 //----------------------------------------------------------------------------------------------------------------------
 int main(int argc, char **argv)
 {
-    static struct argp_option options[] =
-    {
-        { "showfps", -1, 0, 0, "Show fps in game.", 1 },
-        { "logfile", 'l', "FILENAME", OPTION_ARG_OPTIONAL, "Log file to write individual frame times.", 1 },
-        { "dry-run", 'y', 0, 0, "Echo which commands would be executed.", 1 },
-
-        { "xterm", 'x', 0, 0, "Start game under xterm.", 2 },
-        { "verbose", -1, 0, 0, "Produce verbose output from libvoglperf hook.", 2 },
-        { "ld-debug", 'd', 0, 0, "Add LD_DEBUG=lib to game launch.", 2 },
-        { "debugger-pause", -1, 0, 0, "Pause the game in libvoglperf on startup.", 2 },
-
-        { "show-type-list", -2, 0, 0, "Produce list of whitespace-separated words used for command completion.", 3 },
-        { "help", '?', 0, 0, "Print this help message.", 3 },
-
-        { 0, 0, 0, 0, NULL, 0 }
-    };
-
     launch_data_t ld;
 
     ld.msqid = -1;
     ld.args.flags = 0;
     ld.args.appids_file_found = false;
     ld.is_local_file = false;
+
+    ld.ipaddr = get_ip_addr();
+    ld.port = "8081";
+
+    static struct argp_option options[] =
+    {
+        { "showfps"        , -1  , 0          , 0                   , "Show fps in game."                                                       , 1 },
+        { "logfile"        , 'l' , "FILENAME" , OPTION_ARG_OPTIONAL , "Log file to write individual frame times."                               , 1 },
+        { "dry-run"        , 'y' , 0          , 0                   , "Echo which commands would be executed."                                  , 1 },
+
+        { "fps"            , 'f' , 0          , 0                   , "Show fps summary every second."                                          , 2 },
+        { "xterm"          , 'x' , 0          , 0                   , "Start game under xterm."                                                 , 2 },
+        { "verbose"        , 'v' , 0          , 0                   , "Produce verbose output from libvoglperf hook."                           , 2 },
+        { "ld-debug"       , 'd' , 0          , 0                   , "Add LD_DEBUG=lib to game launch."                                        , 2 },
+        { "debugger-pause" , -1  , 0          , 0                   , "Pause the game in libvoglperf on startup."                               , 2 },
+        { "port"           , 'p' , "PORT"     , 0                   , "Web port."                                                               , 2 },
+        { "ipaddr"         , 'i' , "IPADDR"   , 0                   , "IP bin address."                                                         , 2 },
+
+        { "show-type-list" , -2  , 0          , 0                   , "Produce list of whitespace-separated words used for command completion." , 3 },
+        { "help"           , '?' , 0          , 0                   , "Print this help message."                                                , 3 },
+
+        { 0, 0, 0, 0, NULL, 0 }
+    };
 
     parse_appid_file(ld);
 
@@ -691,13 +1360,6 @@ int main(int argc, char **argv)
 
     if (!(ld.args.flags & F_DRYRUN))
     {
-        // And launch it...
-        // system returns -1 on error, otherwise return status of command.
-        errno = 0;
-        int ret = system(ld.launch_cmd.c_str());
-        if ((ret == -1) && errno)
-            errorf("ERROR: system(%s) failed: %s\n", ld.launch_cmd.c_str(), strerror(errno));
-
         // Try to retrieve frame rate data from game.
         retrieve_fps_data(ld);
 

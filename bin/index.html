@@ -1,0 +1,171 @@
+<html>
+<head>
+<title>VoglPerf</title>
+
+<style>
+ html,body { font:normal 0.9em arial,helvetica; }
+ #log { width:95%; height:80%; border:1px solid #7F9DB9; overflow:auto; }
+ #msg { width:350px; }
+ #cmdhelp { font:normal 0.8em arial,helvetica; }
+</style>
+
+<script>
+
+var socket = null;
+
+function init()
+{
+  $("msg").focus();
+  connect();
+}
+
+function sendmessage(msg)
+{
+  try
+  {
+    socket.send(msg);
+    log("> " + msg, "Crimson");
+
+    var txt = $("msg");
+    txt.value = "";
+    txt.focus();
+  }
+  catch(ex)
+  {
+    log("send error:", "red");
+    log(ex);
+  }
+}
+
+function waitForSocketConnection(socket, callback)
+{
+  if (socket)
+  {
+    setTimeout(
+        function()
+        {
+          if (socket.readyState === WebSocket.OPEN)
+          {
+            // call sendmessage()
+            callback();
+          }
+          else if(socket.readyState == WebSocket.CONNECTING)
+          {
+            // Still in CONNECTING state - wait another 5ms.
+            waitForSocketConnection(socket, callback);
+          }
+        }, 5); // wait 5 milisecond for the connection...
+  }
+}
+
+function send(msg)
+{
+  var msg = $("msg").value;
+  if (msg == "clear")
+  {
+    clearlog();
+    $("msg").value = "";
+  }
+  else if (msg)
+  {
+    if (socket == null)
+      connect();
+    waitForSocketConnection(socket, function() { sendmessage(msg); });
+  }
+}
+
+function clearlog()
+{
+  $("log").innerHTML = "";
+  $("msg").focus();
+}
+
+function disconnect()
+{
+  if (socket)
+  {
+    socket.close();
+    socket = null;
+  }
+}
+
+function connect()
+{
+  // If we've got a socket and it's connecting or already open, then return.
+  if (socket && ((socket.readyState == WebSocket.CONNECTING) || (socket.readState == WebSocket.OPEN)))
+    return;
+
+  // Make sure we're all closed out.
+  disconnect();
+
+  try
+  {
+    var host = location.host;
+    socket = new WebSocket("ws://" + host + "/ws");
+
+    socket.onopen = function(msg)
+    {
+      log("Connected to " + socket.url, "gray");
+    };
+    socket.onmessage = function(msg)
+    {
+      log(msg.data, "DarkBlue");
+    };
+    socket.onclose = function(msg)
+    {
+      if (socket)
+      {
+        log("Socket.OnClose: Disconnected.", "gray");
+        socket = null;
+      }
+    };
+    socket.onerror = function(msg)
+    {
+      log("Socket.OnError: \"" + msg.data + "\"", "red");
+      socket = null;
+    };
+  }
+  catch(ex)
+  {
+    log(ex);
+    socket = null;
+  }
+
+  $("msg").focus();
+}
+
+function $(id)
+{
+  return document.getElementById(id);
+}
+
+function log(msg, color)
+{
+  if (color)
+    msg = "<span style=\"color:" + color + ";\">" + msg + "</span>";
+  $("log").innerHTML += msg + "<br>";
+  $("log").scrollTop = $("log").scrollHeight;
+}
+
+function onkey(event)
+{
+  // Send on <Enter>...
+  if(event.keyCode == 13)
+  {
+    send();
+  }
+}
+
+</script>
+
+</head>
+<body onload="init()">
+ <h3>VoglPerf</h3>
+ message: <input id="msg" type="textbox" size="35" onkeyup="onkey(event)"/>
+ <button id="sendbtn" onclick="send()">Send</button>
+ <div id="cmdhelp">Commands: help, clear, game exit, logfile start [seconds], logfile stop,fps [on|off].</div>
+ <br>
+ <div id="log"></div>
+</body>
+</html>
+

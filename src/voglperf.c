@@ -57,9 +57,11 @@ int g_verbose = 0;
 
 // If we write 4000 frametimes of '0.25 ', that would be 20,000 bytes. So 32k should be enough to
 // handle a full second of reasonable frametimes.
+char g_logfile_name[PATH_MAX];
 int g_logfile_buf_len = 0;
 char g_logfile_buf[32 * 1024];
 int g_logfile_fd = -1;
+uint64_t g_logfile_time = 0;
 
 int g_msqid = -1;
 
@@ -76,6 +78,8 @@ VOGL_X11_SYM(int, XDrawString, (Display *a, Drawable b, GC c, int d, int e, _Xco
 typedef const GLubyte *(*GLAPIENTRY glGetString_func_ptr_t)(GLenum name);
 typedef Bool (*glXMakeCurrent_func_ptr_t)(Display *dpy, GLXDrawable drawable, GLXContext ctx);
 typedef void (*glXSwapBuffers_func_ptr_t)(Display *dpy, GLXDrawable drawable);
+
+static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_logfile);
 
 // Use get_glinfo() to get gl/vendor/renderer/version associated with dpy+drawable
 typedef struct glinfo_cache_t
@@ -259,6 +263,87 @@ static void *vogl_load_function(void *handle, const char *name)
     return dlsym(handle, name);
 }
 
+static void voglperf_logfile_close()
+{
+    if (g_logfile_fd == -1)
+        return;
+
+    syslog(LOG_INFO, "(voglperf) logfile_close(%s).\n", g_logfile_name);
+    
+    // Flush whatever framerate numbers we've built up.
+    voglperf_swap_buffers(NULL, None, 1);
+
+    // Close the file.
+    close(g_logfile_fd);
+    g_logfile_fd = -1;
+
+    // Notify folks.
+    if (g_msqid != -1)
+    {
+        struct mbuf_logfile_stop_t mbuf_stop;
+
+        mbuf_stop.mtype = MSGTYPE_LOGFILE_STOP_NOTIFY;
+        strncpy(mbuf_stop.logfile, g_logfile_name, sizeof(mbuf_stop.logfile));
+
+        int ret = msgsnd(g_msqid, &mbuf_stop, sizeof(mbuf_stop) - sizeof(mbuf_stop.mtype), IPC_NOWAIT);
+        if (ret == -1)
+            syslog(LOG_ERR, "(voglperf) msgsnd failed: %d. %s\n", ret, strerror(errno));
+    }
+
+    g_logfile_name[0] = 0;
+    g_logfile_time = 0;
+}
+
+static int voglperf_logfile_open(const char *logfile_name, uint64_t seconds)
+{
+    // Make sure nothing is currently open.
+    voglperf_logfile_close();
+
+    syslog(LOG_INFO, "(voglperf) logfile_open(%s) %" PRIu64 "seconds.\n", logfile_name, seconds);
+
+    g_logfile_fd = open(logfile_name, O_WRONLY | O_CREAT, 0666);
+    if (g_logfile_fd == -1)
+    {
+        syslog(LOG_ERR, "(voglperf) Error opening '%s': %s\n", logfile_name, strerror(errno));
+    }
+    else
+    {
+        time_t now;
+        struct tm now_tm;
+        char timebuf[256];
+
+        time(&now);
+        strftime(timebuf, sizeof(timebuf), "%h %e %T", localtime_r(&now, &now_tm));
+
+        if (g_logfile_fd != -1)
+        {
+            snprintf(g_logfile_buf, sizeof(g_logfile_buf),
+                     "# %s - %s\n",
+                     timebuf, program_invocation_short_name);
+            HANDLE_EINTR(write(g_logfile_fd, g_logfile_buf, strlen(g_logfile_buf)));
+            g_logfile_buf_len = 0;
+
+            g_logfile_time = seconds * 1000000000;
+
+            strncpy(g_logfile_name, logfile_name, sizeof(g_logfile_name));
+
+            if (g_msqid != -1)
+            {
+                struct mbuf_logfile_start_t mbuf_start;
+                mbuf_start.mtype = MSGTYPE_LOGFILE_START_NOTIFY;
+                strncpy(mbuf_start.logfile, g_logfile_name, sizeof(mbuf_start.logfile));
+                mbuf_start.time = seconds;
+
+                int ret = msgsnd(g_msqid, &mbuf_start, sizeof(mbuf_start) - sizeof(mbuf_start.mtype), IPC_NOWAIT);
+                if (ret == -1)
+                    syslog(LOG_ERR, "(voglperf) msgsnd failed: %d. %s\n", ret, strerror(errno));
+            }
+        }
+    }
+
+    return g_logfile_fd;
+}
+
 //----------------------------------------------------------------------------------------------------------------------
 // voglperf_init
 //----------------------------------------------------------------------------------------------------------------------
@@ -288,7 +373,7 @@ static void voglperf_init()
                 {
                     struct mbuf_pid_t mbuf;
 
-                    mbuf.mtype = 1;
+                    mbuf.mtype = MSGTYPE_PID_NOTIFY;
                     mbuf.pid = getpid();
 
 					int ret = msgsnd(msqid, &mbuf, sizeof(mbuf) - sizeof(mbuf.mtype), IPC_NOWAIT);
@@ -348,32 +433,10 @@ static void voglperf_init()
                 snprintf(logfile_name, sizeof(logfile_name), "%.*s", (int)(logfile_end - logfile), logfile);
                 syslog(LOG_INFO, "(voglperf)  Framerate logfile: '%s'\n", logfile_name);
 
-                g_logfile_fd = open(logfile_name, O_WRONLY | O_CREAT, 0666);
-                if (g_logfile_fd == -1)
-                {
-                    syslog(LOG_ERR, "(voglperf) Error opening '%s': %s\n", logfile_name, strerror(errno));
-                }
-                else
-                {
-                    time_t now;
-                    struct tm now_tm;
-                    char timebuf[256];
-
-                    time(&now);
-                    strftime(timebuf, sizeof(timebuf), "%h %e %T", localtime_r(&now, &now_tm));
-
-                    if (g_logfile_fd != -1)
-                    {
-                        snprintf(g_logfile_buf, sizeof(g_logfile_buf),
-                                     "# %s - %s\n",
-                                     timebuf, program_invocation_short_name);
-                        HANDLE_EINTR(write(g_logfile_fd, g_logfile_buf, strlen(g_logfile_buf)));
-                        g_logfile_buf_len = 0;
-                    }
-
-                    atexit(vogl_perf_destructor_func);
-                }
+                voglperf_logfile_open(logfile_name, -1);
             }
+
+            atexit(vogl_perf_destructor_func);
 
             if (g_showfps)
             {
@@ -510,7 +573,7 @@ static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_
         {
             struct mbuf_fps_t mbuf;
 
-            mbuf.mtype = MSGTYPE_FPS;
+            mbuf.mtype = MSGTYPE_FPS_NOTIFY;
             mbuf.fps = s_frameinfo.frame_count * (double)g_BILLION / s_frameinfo.time_benchmark;
             mbuf.frame_count = s_frameinfo.frame_count;
             mbuf.frame_time = s_frameinfo.time_benchmark * g_rcpMILLION;
@@ -520,9 +583,12 @@ static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_
             snprintf(s_frameinfo.text, sizeof(s_frameinfo.text),
                          "%.2f fps frames:%u time:%.2fms min:%.2fms max:%.2fms",
                          mbuf.fps, mbuf.frame_count, mbuf.frame_time, mbuf.frame_min, mbuf.frame_max);
-            syslog(LOG_INFO, "(voglperf) %s\n", s_frameinfo.text);
+            if (g_verbose)
+            {
+                syslog(LOG_INFO, "(voglperf) %s\n", s_frameinfo.text);
+            }
 
-            if (g_msqid >= 0)
+            if (g_msqid != -1)
             {
                 int ret = msgsnd(g_msqid, &mbuf, sizeof(mbuf) - sizeof(mbuf.mtype), IPC_NOWAIT);
                 if (ret == -1)
@@ -552,6 +618,19 @@ static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_
 
         s_frameinfo.frame_count++;
         s_frameinfo.time_benchmark += time_frame;
+
+        if (g_logfile_time)
+        {
+            if (g_logfile_time <= time_frame)
+            {
+                g_logfile_time = 0;
+                voglperf_logfile_close();
+            }
+            else
+            {
+                g_logfile_time -= time_frame;
+            }
+        }
     }
 
     s_frameinfo.time_last_frame = time_cur;
@@ -592,6 +671,17 @@ static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_
             }
         }
     }
+
+    if (!flush_logfile && (s_frameinfo.frame_count == 1))
+    {
+        struct mbuf_logfile_stop_t mbuf_stop;
+        if (msgrcv(g_msqid, &mbuf_stop, sizeof(mbuf_stop), MSGTYPE_LOGFILE_STOP, IPC_NOWAIT) != -1)
+            voglperf_logfile_close();
+
+        struct mbuf_logfile_start_t mbuf_start;
+        if (msgrcv(g_msqid, &mbuf_start, sizeof(mbuf_start), MSGTYPE_LOGFILE_START, IPC_NOWAIT) != -1)
+            voglperf_logfile_open(mbuf_start.logfile, mbuf_start.time);
+    }
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -626,27 +716,20 @@ VOGL_API_EXPORT void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 //----------------------------------------------------------------------------------------------------------------------
 __attribute__((destructor)) static void vogl_perf_destructor_func()
 {
-    if (g_logfile_fd != -1)
+    voglperf_logfile_close();
+
+    if (g_msqid != -1)
     {
-        // Flush whatever framerate numbers we've built up.
-        voglperf_swap_buffers(NULL, None, 1);
+        struct mbuf_fps_t mbuf;
 
-        if (g_msqid != -1)
-        {
-            struct mbuf_fps_t mbuf;
+        // Let voglperfrun know we're exiting.
+        mbuf.mtype = MSGTYPE_FPS_NOTIFY;
+        mbuf.frame_count = (uint32_t)-1;
 
-            // Let voglperfrun know we're exiting.
-            mbuf.mtype = MSGTYPE_FPS;
-            mbuf.frame_count = (uint32_t)-1;
+        int ret = msgsnd(g_msqid, &mbuf, sizeof(mbuf) - sizeof(mbuf.mtype), IPC_NOWAIT);
+        if (ret == -1)
+            syslog(LOG_ERR, "(voglperf) msgsnd failed: %d. %s\n", ret, strerror(errno));
 
-			int ret = msgsnd(g_msqid, &mbuf, sizeof(mbuf) - sizeof(mbuf.mtype), IPC_NOWAIT);
-            if (ret == -1)
-                syslog(LOG_ERR, "(voglperf) msgsnd failed: %d. %s\n", ret, strerror(errno));
-
-            g_msqid = -1;
-        }
-
-        close(g_logfile_fd);
-        g_logfile_fd = -1;
+        g_msqid = -1;
     }
 }

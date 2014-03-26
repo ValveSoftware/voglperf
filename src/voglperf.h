@@ -25,8 +25,13 @@
 
 enum
 {
-    MSGTYPE_PID = 1,
-    MSGTYPE_FPS = 2
+    // _NOTIFY messages sent from hook to voglperfrun.
+    MSGTYPE_PID_NOTIFY = 1,
+    MSGTYPE_FPS_NOTIFY = 2,
+    MSGTYPE_LOGFILE_START_NOTIFY = 3,
+    MSGTYPE_LOGFILE_STOP_NOTIFY = 4,
+    MSGTYPE_LOGFILE_START = 5,
+    MSGTYPE_LOGFILE_STOP = 6
 };
 
 struct mbuf_pid_t
@@ -43,4 +48,17 @@ struct mbuf_fps_t
     float frame_time;
     float frame_min;
     float frame_max;
+};
+
+struct mbuf_logfile_start_t
+{
+    long mtype; // MSGTYPE_LOGFILE_START
+    char logfile[PATH_MAX];
+    uint64_t time;
+};
+
+struct mbuf_logfile_stop_t
+{
+    long mtype; // MSGTYPE_LOGFILE_STOP
+    char logfile[PATH_MAX];
 };
