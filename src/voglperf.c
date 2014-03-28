@@ -299,7 +299,7 @@ static int voglperf_logfile_open(const char *logfile_name, uint64_t seconds)
     // Make sure nothing is currently open.
     voglperf_logfile_close();
 
-    syslog(LOG_INFO, "(voglperf) logfile_open(%s) %" PRIu64 "seconds.\n", logfile_name, seconds);
+    syslog(LOG_INFO, "(voglperf) logfile_open(%s) %" PRIu64 " seconds.\n", logfile_name, seconds);
 
     g_logfile_fd = open(logfile_name, O_WRONLY | O_CREAT, 0666);
     if (g_logfile_fd == -1)

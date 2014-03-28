@@ -109,7 +109,7 @@ function connect()
     };
     socket.onmessage = function(msg)
     {
-      log(msg.data, "DarkBlue");
+      log("<pre>" + msg.data + "</pre>", "DarkBlue");
     };
     socket.onclose = function(msg)
     {
