@@ -565,6 +565,23 @@ static void webby_ws_closed(struct WebbyConnection *connection)
 }
 
 //----------------------------------------------------------------------------------------------------------------------
+// webby_ws_get_connection_count
+//----------------------------------------------------------------------------------------------------------------------
+unsigned int webby_ws_get_connection_count()
+{
+    if (g_webby_data.init.verbose)
+    {
+        printf("webby_ws_get_connection_count\n");
+        for (size_t i = 0; i < g_webby_data.ws_connections.size(); i++)
+        {
+            printf("  0x%p\n", g_webby_data.ws_connections[i]);
+        }
+    }
+
+    return g_webby_data.ws_connections.size();
+}
+
+//----------------------------------------------------------------------------------------------------------------------
 // webby_ws_frame
 //----------------------------------------------------------------------------------------------------------------------
 static int webby_ws_frame(struct WebbyConnection *connection, const struct WebbyWsFrame *frame)

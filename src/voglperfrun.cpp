@@ -24,6 +24,7 @@
  **************************************************************************/
 
 //$ TODO: Only msgsnd length of buffer when strings are involved.
+//$ TODO: limit text length in message field in index.html?
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,14 +45,12 @@
 #include "voglperf.h"
 #include "voglutils.h"
 
-//$ TODO: limit text length in message field in index.html?
-
 #define F_DRYRUN         0x00000001
 #define F_LDDEBUGSPEW    0x00000002
 #define F_XTERM          0x00000004
 #define F_VERBOSE        0x00000008
 #define F_FPSSPEW        0x00000010
-#define F_SHOWFPS        0x00000020
+#define F_FPSSHOW        0x00000020
 #define F_DEBUGGERPAUSE  0x00000040
 #define F_LOGFILE        0x00000080
 #define F_QUIT           0x00010000
@@ -60,18 +59,19 @@ struct voglperf_options_t
 {
     const char *name;
     int key;
+    bool launch_setting; // Setting is only valid while launching.
     int flag;
     const char *desc;
 } g_options[] =
 {
-    { "dry-run"        , 'y' , F_DRYRUN        , "Echo which commands would be executed and exit." },
-    { "ld-debug"       , 'd' , F_LDDEBUGSPEW   , "Add LD_DEBUG=lib to game launch."                },
-    { "xterm"          , 'x' , F_XTERM         , "Start game under xterm."                         },
-    { "verbose"        , 'v' , F_VERBOSE       , "Produce verbose output."                         },
-    { "fpsspew"        , 'f' , F_FPSSPEW       , "Show fps summary every second."                  },
-    { "showfps"        , 's' , F_SHOWFPS       , "Show fps in game."                               },
-    { "debugger-pause" , 'g' , F_DEBUGGERPAUSE , "Pause the game in libvoglperf on startup."       },
-    { "logfile"        , 'l' , F_LOGFILE       , "Write frame times to log file."                  },
+    { "logfile"        , 'l' , true,  F_LOGFILE       , "Frame time logging on."                       },
+    { "verbose"        , 'v' , false, F_VERBOSE       , "Verbose output."                              },
+    { "fpsspew"        , 'f' , false, F_FPSSPEW       , "Spew fps summary every second."               },
+    { "fpsshow"        , 's' , true,  F_FPSSHOW       , "Show fps in game."                            },
+    { "dry-run"        , 'y' , true,  F_DRYRUN        , "Only echo commands which would be executed."  },
+    { "ld-debug"       , 'd' , true,  F_LDDEBUGSPEW   , "Add LD_DEBUG=lib to game launch."             },
+    { "xterm"          , 'x' , true,  F_XTERM         , "Launch game under xterm."                     },
+    { "debugger-pause" , 'g' , true,  F_DEBUGGERPAUSE , "Pause the game in libvoglperf.so on startup." },
 };
 
 struct voglperf_data_t
@@ -323,13 +323,15 @@ static bool game_start_init_launch_cmd(voglperf_data_t &data)
     // Hand out our message queue id so we can get framerate data back, etc.
     VOGL_CMD_LINE += string_format("--msqid=%u ", data.msqid);
 
+    // When the logfile starts, we should get a message and it will record the name here.
+    data.logfile = "";
     if (data.flags & F_LOGFILE)
     {
-        data.logfile = get_logfile_name(data.run_data.game_name);
-        VOGL_CMD_LINE += "--logfile='" + data.logfile + "'";
+        std::string logfile = get_logfile_name(data.run_data.game_name);
+        VOGL_CMD_LINE += "--logfile='" + logfile + "'";
     }
 
-    if (data.flags & F_SHOWFPS)
+    if (data.flags & F_FPSSHOW)
         VOGL_CMD_LINE += " --showfps";
     if (data.flags & F_DEBUGGERPAUSE)
         VOGL_CMD_LINE += " --debugger-pause";
@@ -481,17 +483,22 @@ static void game_start(voglperf_data_t &data)
 std::string get_vogl_status_str(voglperf_data_t &data)
 {
     std::string status_str = string_format("Gameid: '%s'\n", data.gameid.c_str());
+    
+    status_str += string_format("  WS Connections: %u\n", webby_ws_get_connection_count());
 
     if (data.run_data.pid != (uint64_t)-1)
     {
         status_str += string_format("  Game: %s\n", data.run_data.game_name.c_str());
+        status_str += string_format("  Logfile: '%s'\n", data.logfile.c_str());
         status_str += string_format("  Pid: %" PRIu64 "\n", data.run_data.pid);
         status_str += data.run_data.launch_cmd;
     }
 
+    std::string launch_str(" (Launch option)");
     for (size_t i = 0; i < sizeof(g_options) / sizeof(g_options[0]); i++)
     {
-        status_str += string_format("  %s: %s\n", g_options[i].name, (data.flags & g_options[i].flag) ? "On" : "Off");
+        status_str += string_format("  %s: %s%s\n", g_options[i].name, (data.flags & g_options[i].flag) ? "On" : "Off",
+                                    g_options[i].launch_setting ? launch_str.c_str() : "");
     }
     
     return status_str;
@@ -531,7 +538,6 @@ void process_commands(voglperf_data_t &data)
         bool off = (args[1] == "off" || args[1] == "0");
         if (!args[1].size() || on || off)
         {
-
             for (size_t i = 0; i < sizeof(g_options) / sizeof(g_options[0]); i++)
             {
                 if (args[0] == g_options[i].name)
@@ -542,6 +548,11 @@ void process_commands(voglperf_data_t &data)
                         data.flags &= ~g_options[i].flag;
 
                     ws_reply += string_format("%s: %s\n", g_options[i].name, (data.flags & g_options[i].flag) ? "On" : "Off");
+
+                    // This is a launch option and the game is already running - warn them.
+                    if (on && g_options[i].launch_setting && (data.run_data.pid != (uint64_t)-1))
+                        ws_reply += "  Option used with next game launch...\n";
+
                     handled = true;
                 }
             }
@@ -691,7 +702,9 @@ static void update_app_messages(voglperf_data_t &data)
     if (ret != -1)
     {
         std::string time = mbuf_start.time ? string_format(" (%" PRId64 " seconds).", mbuf_start.time) : "";
+
         webby_ws_printf("Logfile started: %s%s\n", mbuf_start.logfile, time.c_str());
+        data.logfile = mbuf_start.logfile;
     }
 
     struct mbuf_logfile_stop_t mbuf_stop;
@@ -699,7 +712,9 @@ static void update_app_messages(voglperf_data_t &data)
     if (ret != -1)
     {
         std::string url = string_format("http://%s:%s/logfile%s\n", data.ipaddr.c_str(), data.port.c_str(), mbuf_stop.logfile);
+
         webby_ws_printf("Logfile stopped: <a href=\"%s\">%s</a>\n", url.c_str(), url.c_str());
+        data.logfile = "";
     }
 
     // Check if the app has finished.
