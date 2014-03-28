@@ -942,7 +942,7 @@ int main(int argc, char **argv)
      */
     webby_ws_printf("\nDone.\n");
 
-    if (threadid != (uint64_t)-1)
+    if (threadid != (pthread_t)-1)
     {
         void *status = NULL;
         pthread_cancel(threadid);
