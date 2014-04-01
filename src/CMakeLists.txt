@@ -37,19 +37,14 @@ target_link_libraries(${PROJECT_NAME}
 #
 project(voglperfrun)
 
-find_package(PkgConfig)
-include(FindPackageHandleStandardArgs)
+message("MAKE_LIBRARY_ARCHITECTURE is ${CMAKE_LIBRARY_ARCHITECTURE}")
 
-# Track down libedit...
-pkg_check_modules(PKG_LIBEDIT REQUIRED libedit)
-set(LIBEDIT_DEFS ${PKG_LIBEDIT_CFLAGS_OTHER})
-find_path(LIBEDIT_INCLUDE_DIR histedit.h
-          HINTS ${PKG_LIBEDIT_INCLUDEDIR} ${PKG_LIBEDIT_INCLUDE_DIRS} )
-find_library(LIBEDIT_LIBRARY NAMES edit 
-             HINTS ${PKG_LIBEDIT_LIBDIR} ${PKG_LIBEDIT_LIBRARY_DIRS} )
-# Set LIBEDIT_FOUND and bail if libedit not found.
-find_package_handle_standard_args(LibEdit DEFAULT_MSG
-                                  LIBEDIT_LIBRARY LIBEDIT_INCLUDE_DIR)
+# add libedit lib
+include_directories(${CMAKE_SOURCE_DIR}/libedit-3.1/include)
+set(LIBEDIT_LIBS
+    "${CMAKE_SOURCE_DIR}/libedit-3.1/lib/${LIBDIR}/libedit.a"
+    tinfo
+    )
 
 set(SRC_LIST
     voglperfrun.cpp
@@ -60,8 +55,8 @@ add_executable(${PROJECT_NAME} ${SRC_LIST})
 
 target_link_libraries(${PROJECT_NAME}
     rt
-    ${LIBEDIT_LIBRARY}
     ${CMAKE_THREAD_LIBS_INIT}
+    ${LIBEDIT_LIBS}
     )
 
 build_options_finalize()

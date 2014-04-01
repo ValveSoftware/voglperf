@@ -22,10 +22,12 @@ if (BUILD_X64)
     message("Building 64-bit voglperf...")
     set(CMAKE_EXECUTABLE_SUFFIX 64)
     set(CMAKE_SHARED_LIBRARY_SUFFIX "64.so")
+    set(LIBDIR "x86_64-linux-gnu")
 else()
     message("Building 32-bit voglperf...")
     set(CMAKE_EXECUTABLE_SUFFIX 32)
     set(CMAKE_SHARED_LIBRARY_SUFFIX "32.so")
+    set(LIBDIR "i386-linux-gnu")
 endif()
 
 option(CMAKE_VERBOSE "Verbose CMake" FALSE)
@@ -160,7 +162,6 @@ string(REPLACE ";" " " CMAKE_SHARED_LINKER_FLAGS  "${CMAKE_SHARED_LINK_FLAGS_LIS
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/../bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/../bin)
-
 
 function(build_options_finalize)
     if( CMAKE_VERBOSE )

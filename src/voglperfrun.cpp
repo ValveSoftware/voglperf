@@ -483,7 +483,7 @@ static void game_start(voglperf_data_t &data)
 std::string get_vogl_status_str(voglperf_data_t &data)
 {
     std::string status_str = string_format("Gameid: '%s'\n", data.gameid.c_str());
-    
+
     status_str += string_format("  WS Connections: %u\n", webby_ws_get_connection_count());
 
     if (data.run_data.pid != (uint64_t)-1)
