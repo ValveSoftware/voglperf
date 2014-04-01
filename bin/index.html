@@ -4,7 +4,13 @@
 
 <style>
  html,body { font:normal 0.9em arial,helvetica; }
- #log { width:95%; height:80%; border:1px solid #7F9DB9; overflow:auto; }
+ #log
+ {
+     width:95%;
+     height:80%;
+     border:1px solid #7F9DB9;
+     overflow:auto;
+ }
  #msg { width:350px; }
  #cmdhelp { font:normal 0.8em arial,helvetica; }
 </style>
@@ -143,7 +149,7 @@ function log(msg, color)
 {
   if (color)
     msg = "<span style=\"color:" + color + ";\">" + msg + "</span>";
-  $("log").innerHTML += msg + "<br>";
+  $("log").innerHTML += msg;
   $("log").scrollTop = $("log").scrollHeight;
 }
 
