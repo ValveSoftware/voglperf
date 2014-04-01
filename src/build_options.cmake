@@ -22,11 +22,13 @@ if (BUILD_X64)
     message("Building 64-bit voglperf...")
     set(CMAKE_EXECUTABLE_SUFFIX 64)
     set(CMAKE_SHARED_LIBRARY_SUFFIX "64.so")
+    # TODO: get dir from: gcc -print-multiarch
     set(LIBDIR "x86_64-linux-gnu")
 else()
     message("Building 32-bit voglperf...")
     set(CMAKE_EXECUTABLE_SUFFIX 32)
     set(CMAKE_SHARED_LIBRARY_SUFFIX "32.so")
+    # TODO: get dir from: gcc -print-multiarch -m32
     set(LIBDIR "i386-linux-gnu")
 endif()
 
