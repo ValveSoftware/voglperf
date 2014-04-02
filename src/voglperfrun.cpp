@@ -514,7 +514,7 @@ void process_commands(voglperf_data_t &data)
         "game start [steamid | filename]: Start game.",
         "game stop: Send SIGTERM signal to game.",
 
-        "game set (steamid | filename): Set gameid to launch."
+        "game set (steamid | filename): Set gameid to launch.",
 
         "logfile start [seconds]: Start capturing frame time data to filename.",
         "logfile stop: Stop capturing frame time data.",
