@@ -536,7 +536,13 @@ void process_commands(voglperf_data_t &data)
 
         bool on = (args[1] == "on" || args[1] == "1");
         bool off = (args[1] == "off" || args[1] == "0");
-        if (!args[1].size() || on || off)
+        if (on && (data.run_data.pid != (uint64_t)-1) && (args[0] == "logfile"))
+        {
+            // Special case someone typing "logfile on" while the game is running.
+            // Turn it into a "logfile start" command.
+            args[1] = "start";
+        }
+        else if (!args[1].size() || on || off)
         {
             for (size_t i = 0; i < sizeof(g_options) / sizeof(g_options[0]); i++)
             {

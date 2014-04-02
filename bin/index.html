@@ -11,6 +11,10 @@
      border:1px solid #7F9DB9;
      overflow:auto;
  }
+ #log pre
+ {
+     display: inline
+ }
  #msg { width:350px; }
  #cmdhelp { font:normal 0.8em arial,helvetica; }
 </style>
@@ -30,7 +34,7 @@ function sendmessage(msg)
   try
   {
     socket.send(msg);
-    log("> " + msg, "Crimson");
+    log("> " + msg + "<br>", "Crimson");
 
     var txt = $("msg");
     txt.value = "";
@@ -111,23 +115,24 @@ function connect()
 
     socket.onopen = function(msg)
     {
-      log("Connected to " + socket.url, "gray");
+      log("Connected to " + socket.url + "<br>", "gray");
     };
     socket.onmessage = function(msg)
     {
-      log("<pre>" + msg.data + "</pre>", "DarkBlue");
+      var text = msg.data.trim();
+      log("<pre>" + text + "\n</pre>", "DarkBlue");
     };
     socket.onclose = function(msg)
     {
       if (socket)
       {
-        log("Socket.OnClose: Disconnected.", "gray");
+        log("Socket.OnClose: Disconnected.<br>", "gray");
         socket = null;
       }
     };
     socket.onerror = function(msg)
     {
-      log("Socket.OnError: \"" + msg.data + "\"", "red");
+      log("Socket.OnError: \"" + msg.data + "\"<br>", "red");
       socket = null;
     };
   }
