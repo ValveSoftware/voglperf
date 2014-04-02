@@ -49,7 +49,7 @@
 #define F_LDDEBUGSPEW    0x00000002
 #define F_XTERM          0x00000004
 #define F_VERBOSE        0x00000008
-#define F_FPSSPEW        0x00000010
+#define F_FPSPRINT       0x00000010
 #define F_FPSSHOW        0x00000020
 #define F_DEBUGGERPAUSE  0x00000040
 #define F_LOGFILE        0x00000080
@@ -66,8 +66,8 @@ struct voglperf_options_t
 {
     { "logfile"        , 'l' , true,  F_LOGFILE       , "Frame time logging on."                       },
     { "verbose"        , 'v' , false, F_VERBOSE       , "Verbose output."                              },
-    { "fpsspew"        , 'f' , false, F_FPSSPEW       , "Spew fps summary every second."               },
-    { "fpsshow"        , 's' , true,  F_FPSSHOW       , "Show fps in game."                            },
+    { "fpsprint"       , 'f' , false, F_FPSPRINT      , "Print fps summary every second."              },
+    { "fpsshow"        , 's' , false, F_FPSSHOW       , "Show fps in game."                            },
     { "dry-run"        , 'y' , true,  F_DRYRUN        , "Only echo commands which would be executed."  },
     { "ld-debug"       , 'd' , true,  F_LDDEBUGSPEW   , "Add LD_DEBUG=lib to game launch."             },
     { "xterm"          , 'x' , true,  F_XTERM         , "Launch game under xterm."                     },
@@ -83,7 +83,7 @@ struct voglperf_data_t
 
         msqid = -1;
         flags = 0;
-        
+
         run_data.pid = (uint64_t)-1;
         run_data.file = NULL;
         run_data.fileid = -1;
@@ -429,15 +429,15 @@ static void game_start(voglperf_data_t &data)
     update_app_output(data);
 
     // Try to get the MSGTYPE_PID message for ~ 30 seconds.
-    int sleeptime = 30000;
+    int time = 30000;
 
     webby_ws_printf("Waiting for child process to start...\n");
-    while ((sleeptime >= 0) && !(data.flags & F_QUIT))
+    while ((time >= 0) && !(data.flags & F_QUIT))
     {
         struct mbuf_pid_t mbuf;
 
         usleep(500 * 1000);
-        sleeptime -= 500;
+        time -= 500;
 
         if (msgrcv(data.msqid, &mbuf, sizeof(mbuf), MSGTYPE_PID_NOTIFY, IPC_NOWAIT) != -1)
         {
@@ -449,7 +449,7 @@ static void game_start(voglperf_data_t &data)
         update_app_output(data);
 
         // Check for user typing quit command.
-        webby_update(&data.commands);
+        webby_update(&data.commands, NULL);
         for (size_t i = 0; i < data.commands.size(); i++)
         {
             if (data.commands[i] == "quit" || data.commands[i] == "q" || data.commands[i] == "exit")
@@ -500,7 +500,7 @@ std::string get_vogl_status_str(voglperf_data_t &data)
         status_str += string_format("  %s: %s%s\n", g_options[i].name, (data.flags & g_options[i].flag) ? "On" : "Off",
                                     g_options[i].launch_setting ? launch_str.c_str() : "");
     }
-    
+
     return status_str;
 }
 
@@ -544,6 +544,8 @@ void process_commands(voglperf_data_t &data)
         }
         else if (!args[1].size() || on || off)
         {
+            unsigned int flags_orig = data.flags;
+
             for (size_t i = 0; i < sizeof(g_options) / sizeof(g_options[0]); i++)
             {
                 if (args[0] == g_options[i].name)
@@ -562,6 +564,25 @@ void process_commands(voglperf_data_t &data)
                     handled = true;
                 }
             }
+
+            if (data.run_data.pid != (uint64_t)-1)
+            {
+                // If the verbose or fpsshow args have changed, send msg.
+                if ((flags_orig ^ data.flags) & (F_VERBOSE | F_FPSSHOW))
+                {
+                    mbuf_options_t mbuf;
+
+                    mbuf.mtype = MSGTYPE_OPTIONS;
+                    mbuf.fpsshow = !!(data.flags & F_FPSSHOW);
+                    mbuf.verbose = !!(data.flags & F_VERBOSE);
+
+                    int ret = msgsnd(data.msqid, &mbuf, sizeof(mbuf) - sizeof(mbuf.mtype), IPC_NOWAIT);
+                    if (ret == -1)
+                    {
+                        ws_reply += string_format("ERROR: msgsnd failed: %s\n", strerror(errno));
+                    }
+                }
+            }
         }
 
         if (handled)
@@ -571,7 +592,7 @@ void process_commands(voglperf_data_t &data)
         else if (args[0] == "status")
         {
             ws_reply += get_vogl_status_str(data);
-            
+
             handled = true;
         }
         else if (args[0] == "help")
@@ -696,7 +717,7 @@ static void update_app_messages(voglperf_data_t &data)
             // Frame count of -1 comes in when game exits.
             app_finished = true;
         }
-        else  if (data.flags & F_FPSSPEW)
+        else  if (data.flags & F_FPSPRINT)
         {
             webby_ws_printf("%.2f fps frames:%u time:%.2fms min:%.2fms max:%.2fms\n",
                             mbuf_fps.fps, mbuf_fps.frame_count, mbuf_fps.frame_time, mbuf_fps.frame_min, mbuf_fps.frame_max);
@@ -836,7 +857,7 @@ static void *editline_threadproc(void *arg)
     }
 
     pthread_cleanup_pop(0);
-    
+
     /* Clean up our memory */
     history_end(myhistory);
     el_end(el);
@@ -889,7 +910,7 @@ int main(int argc, char **argv)
     /*
      * Initialize our message queue used to communicate with our hook.
      */
-    data.msqid = msgget(IPC_PRIVATE, IPC_CREAT | S_IRUSR | S_IWUSR); 
+    data.msqid = msgget(IPC_PRIVATE, IPC_CREAT | S_IRUSR | S_IWUSR);
     if (data.msqid == -1)
     {
         errorf("ERROR: msgget() failed: %s\n", strerror(errno));
@@ -930,6 +951,8 @@ int main(int argc, char **argv)
 
     while (!(data.flags & F_QUIT))
     {
+        struct timeval timeout;
+
         // Handle commands from stdin.
         if (data.thread_commands.size())
         {
@@ -939,8 +962,12 @@ int main(int argc, char **argv)
             pthread_mutex_unlock(&data.lock);
         }
 
+        // Have Webby wait .5s unless there are commands to execute.
+        timeout.tv_sec = 0;
+        timeout.tv_usec = data.commands.size() ? 5 : 500 * 1000;
+
         // Update web page.
-        webby_update(&data.commands);
+        webby_update(&data.commands, &timeout);
 
         // Handle any commands.
         process_commands(data);
@@ -950,9 +977,6 @@ int main(int argc, char **argv)
 
         // Grab messages from running game.
         update_app_messages(data);
-
-        // Pause for half a second.
-        usleep(500 * 1000);
 
         if (quit_on_game_exit && (data.run_data.pid == (uint64_t)-1))
             data.commands.push_back("quit");
@@ -971,12 +995,12 @@ int main(int argc, char **argv)
     }
 
     // Update and terminate web server.
-    webby_update(&data.commands);
+    webby_update(&data.commands, NULL);
     webby_end();
 
-    pthread_mutex_destroy(&data.lock); 
-    
-    // Destroy our message queue.            
+    pthread_mutex_destroy(&data.lock);
+
+    // Destroy our message queue.
     msgctl(data.msqid, IPC_RMID, NULL);
     data.msqid = -1;
     return 0;

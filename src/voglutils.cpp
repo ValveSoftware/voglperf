@@ -31,12 +31,14 @@
 #include <libgen.h>
 #include <string.h>
 #include <errno.h>
+#include <pwd.h>
+#include <sys/stat.h>
 
 #include <iomanip>
 #include <sstream>
 
 #include <ifaddrs.h>
-#include <netinet/in.h> 
+#include <netinet/in.h>
 #include <arpa/inet.h>
 #include <net/if.h>
 
@@ -50,7 +52,7 @@ struct webby_data_t
     // Maximum WebSocket connections.
     enum { MAX_WSCONN = 8 };
     std::vector<WebbyConnection *> ws_connections;
-    
+
     // Command strings sent from websocket interfaces.
     std::vector<std::string> ws_commands;
 
@@ -63,7 +65,7 @@ static webby_data_t g_webby_data;
 
 //----------------------------------------------------------------------------------------------------------------------
 // get_ip_addr
-//   http://stackoverflow.com/questions/212528/get-the-ip-address-of-the-machine/3120382#3120382 
+//   http://stackoverflow.com/questions/212528/get-the-ip-address-of-the-machine/3120382#3120382
 //----------------------------------------------------------------------------------------------------------------------
 std::string get_ip_addr()
 {
@@ -96,7 +98,7 @@ std::string get_ip_addr()
 
             if (!(ifa->ifa_flags & IFF_LOOPBACK) || !ret6.length())
                 ret6 = addressBuffer;
-        } 
+        }
     }
 
     if (ifAddrStruct)
@@ -112,6 +114,46 @@ std::string get_ip_addr()
         return ret6;
 
     return "127.0.0.1";
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// get_config_dir
+//----------------------------------------------------------------------------------------------------------------------
+std::string get_config_dir()
+{
+    std::string config_dir;
+    static const char *xdg_config_home = getenv("XDG_CONFIG_HOME");
+
+    if (xdg_config_home && xdg_config_home[0])
+    {
+        config_dir = xdg_config_home;
+    }
+    else
+    {
+        static const char *home = getenv("HOME");
+
+        if (!home || !home[0])
+        {
+            passwd *pw = getpwuid(geteuid());
+            home = pw->pw_dir;
+        }
+
+        if (home && home[0])
+        {
+            config_dir = string_format("%s/.config", home);
+        }
+    }
+
+    if (!config_dir.size())
+    {
+        // Egads, can't find home dir - just fall back to using tmp dir.
+        config_dir = P_tmpdir;
+    }
+
+    config_dir += "/voglperf";
+
+    mkdir(config_dir.c_str(), 0700);
+    return config_dir;
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -142,7 +184,9 @@ std::string get_file_contents(const char *filename)
         str.resize(ftell(fp));
         rewind(fp);
 
-        fread(&str[0], 1, str.size(), fp);
+        size_t ret = fread(&str[0], 1, str.size(), fp);
+        if (ret != str.size())
+            webby_ws_printf("WARNING: Reading %s failed: %s\n", filename, strerror(errno));
         fclose(fp);
 
         return str;
@@ -152,37 +196,52 @@ std::string get_file_contents(const char *filename)
 }
 
 //----------------------------------------------------------------------------------------------------------------------
+// Write a file.
+//----------------------------------------------------------------------------------------------------------------------
+void write_file_contents(const char *filename, std::string data)
+{
+    FILE *fp = fopen(filename, "wb");
+    if (fp)
+    {
+        size_t ret = fwrite(data.c_str(), 1, data.size(), fp);
+        if (ret != data.size())
+            webby_ws_printf("WARNING: Writing %s failed: %s\n", filename, strerror(errno));
+        fclose(fp);
+    }
+}
+
+//----------------------------------------------------------------------------------------------------------------------
 // Printf style formatting for std::string.
 //----------------------------------------------------------------------------------------------------------------------
-std::string string_format(const char *fmt, ...) 
+std::string string_format(const char *fmt, ...)
 {
-    std::string str; 
-    int size = 256; 
+    std::string str;
+    int size = 256;
 
-    for (;;) 
-    {    
+    for (;;)
+    {
         va_list ap;
 
         va_start(ap, fmt);
         str.resize(size);
-        int n = vsnprintf((char *)str.c_str(), size, fmt, ap); 
+        int n = vsnprintf((char *)str.c_str(), size, fmt, ap);
         va_end(ap);
 
         if ((n > -1) && (n < size))
         {
             str.resize(n);
-            return str; 
+            return str;
         }
 
         size = (n > -1) ? (n + 1) : (size * 2);
-    }    
+    }
 
-    return str; 
+    return str;
 }
 
 //----------------------------------------------------------------------------------------------------------------------
 // string_split: split str by delims into args.
-//   http://stackoverflow.com/questions/53849/how-do-i-tokenize-a-string-in-c 
+//   http://stackoverflow.com/questions/53849/how-do-i-tokenize-a-string-in-c
 //----------------------------------------------------------------------------------------------------------------------
 void string_split(std::vector<std::string>& args, const std::string& str, const std::string& delims)
 {
@@ -302,7 +361,7 @@ bool parse_appid_file(std::vector<gameid_t>& installed_games)
         gameid_t gameid;
 
         // Parse the appid and game name from lines like this:
-        //   AppID 400 : "Portal" : /home/mikesart/.local/share/Steam/steamapps/common/Portal 
+        //   AppID 400 : "Portal" : /home/mikesart/.local/share/Steam/steamapps/common/Portal
         while (fgets(line, sizeof(line), file))
         {
             // If line starts with AppID, grab the gameid right after that.
@@ -340,7 +399,7 @@ bool parse_appid_file(std::vector<gameid_t>& installed_games)
             installed_games.push_back(gameids[i]);
         }
     }
-    
+
     return found;
 }
 
@@ -402,7 +461,7 @@ std::string get_ld_preload_str(const char *lib32, const char *lib64, bool do_ld_
     return ld_preload_str;
 }
 
-//----------------------------------------------------------------------------------------------------------------------                                                            
+//----------------------------------------------------------------------------------------------------------------------
 // webby_write_buffer
 //----------------------------------------------------------------------------------------------------------------------
 void webby_ws_write_buffer(struct WebbyConnection *connection, const char *buffer, size_t buffer_len)
@@ -435,7 +494,7 @@ void webby_ws_write_buffer(struct WebbyConnection *connection, const char *buffe
     }
 }
 
-//----------------------------------------------------------------------------------------------------------------------                                                            
+//----------------------------------------------------------------------------------------------------------------------
 // Print string to websocket connections and stdout.
 //----------------------------------------------------------------------------------------------------------------------
 void webby_ws_printf(const char *format, ...)
@@ -449,7 +508,7 @@ void webby_ws_printf(const char *format, ...)
 
     webby_ws_write_buffer(NULL, buffer, (size_t)-1);
 }
-   
+
 //----------------------------------------------------------------------------------------------------------------------
 // webby_log
 //----------------------------------------------------------------------------------------------------------------------
@@ -473,7 +532,7 @@ static int webby_dispatch(struct WebbyConnection *connection)
             static const struct WebbyHeader headers[] =
             {
                 { "Content-Type", "text/plain" },
-            }; 
+            };
 
             WebbyBeginResponse(connection, 200, data.size(), headers, 1);
             WebbyWrite(connection, data.c_str(), data.size());
@@ -482,7 +541,19 @@ static int webby_dispatch(struct WebbyConnection *connection)
         }
     }
 
-    std::string index_html = get_file_contents("index.html");
+    std::string index_html_file = get_config_dir() + "/index_v1.html";
+    std::string index_html = get_file_contents(index_html_file.c_str());
+
+    if (!index_html.size())
+    {
+        extern char _binary_index_html_start;
+        extern char _binary_index_html_end;
+        size_t size = &_binary_index_html_end - &_binary_index_html_start;
+
+        index_html = std::string(&_binary_index_html_start, size);
+
+        write_file_contents(index_html_file.c_str(), index_html);
+    }
 
     if (index_html.size() > 0)
     {
@@ -534,7 +605,7 @@ static void webby_ws_connected(struct WebbyConnection *connection)
     if (g_webby_data.init.ws_connected_pfn)
     {
         std::string data = g_webby_data.init.ws_connected_pfn(connection->user_data);
-        
+
         if (data.size())
         {
             WebbyBeginSocketFrame(connection, WEBBY_WS_OP_TEXT_FRAME);
@@ -596,7 +667,7 @@ static int webby_ws_frame(struct WebbyConnection *connection, const struct Webby
     }
 
     std::string command;
-    
+
     int i = 0;
     while (i < frame->payload_length)
     {
@@ -680,11 +751,11 @@ void webby_start(const webby_init_t& init)
 //----------------------------------------------------------------------------------------------------------------------
 // webby_update
 //----------------------------------------------------------------------------------------------------------------------
-void webby_update(std::vector<std::string> *commands)
+void webby_update(std::vector<std::string> *commands, struct timeval *timeoutval)
 {
     if (g_webby_data.server)
     {
-        WebbyServerUpdate(g_webby_data.server);
+        WebbyServerUpdate(g_webby_data.server, timeoutval);
 
         // If we were passed a command array, add new commands to it.
         if (commands && g_webby_data.ws_commands.size())

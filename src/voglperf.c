@@ -44,7 +44,7 @@
 
 #include "voglperf.h"
 
-#define OS_POSIX 
+#define OS_POSIX
 #include "eintr_wrapper.h"
 
 #define VOGL_API_EXPORT __attribute__((visibility("default")))
@@ -243,8 +243,8 @@ static void vogl_delay(unsigned int ms)
 
     elapsed.tv_sec = ms / 1000;
     elapsed.tv_nsec = (ms % 1000) * 1000000;
-    do { 
-        errno = 0; 
+    do {
+        errno = 0;
 
         tv.tv_sec = elapsed.tv_sec;
         tv.tv_nsec = elapsed.tv_nsec;
@@ -254,7 +254,7 @@ static void vogl_delay(unsigned int ms)
 
 static void *vogl_load_object(const char *sofile)
 {
-    return dlopen(sofile, RTLD_NOW | RTLD_LOCAL);                                                                                                                             
+    return dlopen(sofile, RTLD_NOW | RTLD_LOCAL);
 }
 
 static void *vogl_load_function(void *handle, const char *name)
@@ -269,7 +269,7 @@ static void voglperf_logfile_close()
         return;
 
     syslog(LOG_INFO, "(voglperf) logfile_close(%s).\n", g_logfile_name);
-    
+
     // Flush whatever framerate numbers we've built up.
     voglperf_swap_buffers(NULL, None, 1);
 
@@ -330,6 +330,7 @@ static int voglperf_logfile_open(const char *logfile_name, uint64_t seconds)
             if (g_msqid != -1)
             {
                 struct mbuf_logfile_start_t mbuf_start;
+
                 mbuf_start.mtype = MSGTYPE_LOGFILE_START_NOTIFY;
                 strncpy(mbuf_start.logfile, g_logfile_name, sizeof(mbuf_start.logfile));
                 mbuf_start.time = seconds;
@@ -342,6 +343,44 @@ static int voglperf_logfile_open(const char *logfile_name, uint64_t seconds)
     }
 
     return g_logfile_fd;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// showfps_set
+//----------------------------------------------------------------------------------------------------------------------
+static void showfps_set(int showfps)
+{
+#define LOADX11FUNC(_handle, _func)                      \
+    do                                                   \
+    {                                                    \
+      X11_##_func = vogl_load_function(_handle, #_func); \
+    } while (0)
+
+    g_showfps = showfps;
+
+    if (g_showfps)
+    {
+        static void *s_handle_x11 = NULL;
+
+        if (!s_handle_x11)
+        {
+            s_handle_x11 = vogl_load_object("libX11.so.6");
+            if (s_handle_x11)
+            {
+                LOADX11FUNC(s_handle_x11, XLoadQueryFont);
+                LOADX11FUNC(s_handle_x11, XCreateGC);
+                LOADX11FUNC(s_handle_x11, XDrawString);
+            }
+        }
+
+        if (!X11_XLoadQueryFont || !X11_XCreateGC || !X11_XDrawString)
+        {
+            syslog(LOG_WARNING, "(voglperf) WARNING: Failed to load X11 function pointers.\n");
+            g_showfps = 0;
+        }
+    }
+
+#undef LOADX11FUNC
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -384,9 +423,10 @@ static void voglperf_init()
                 }
             }
 
-            g_showfps = !!strstr(cmd_line, "--showfps");
             g_verbose = !!strstr(cmd_line, "--verbose");
 
+            showfps_set(!!strstr(cmd_line, "--showfps"));
+        
             int debugger_pause = !!strstr(cmd_line, "--debugger-pause");
             if (debugger_pause && isatty(fileno(stdout)))
             {
@@ -437,29 +477,6 @@ static void voglperf_init()
             }
 
             atexit(vogl_perf_destructor_func);
-
-            if (g_showfps)
-            {
-                void *handle = vogl_load_object("libX11.so.6");
-                if (handle)
-                {
-#define LOADX11FUNC(_func)                              \
-    do                                                  \
-    {                                                   \
-        X11_##_func = vogl_load_function(handle, #_func); \
-    } while (0)
-                    LOADX11FUNC(XLoadQueryFont);
-                    LOADX11FUNC(XCreateGC);
-                    LOADX11FUNC(XDrawString);
-#undef LOADX11FUNC
-                }
-
-                if (!X11_XLoadQueryFont || !X11_XCreateGC || !X11_XDrawString)
-                {
-                    syslog(LOG_WARNING, "(voglperf) WARNING: Failed to load X11 function pointers.\n");
-                    g_showfps = 0;
-                }
-            }
         }
 
         syslog(LOG_INFO, "(voglperf) end initialization\n");
@@ -681,6 +698,15 @@ static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_
         struct mbuf_logfile_start_t mbuf_start;
         if (msgrcv(g_msqid, &mbuf_start, sizeof(mbuf_start), MSGTYPE_LOGFILE_START, IPC_NOWAIT) != -1)
             voglperf_logfile_open(mbuf_start.logfile, mbuf_start.time);
+
+        struct mbuf_options_t mbuf_options;
+        if (msgrcv(g_msqid, &mbuf_options, sizeof(mbuf_options), MSGTYPE_OPTIONS, IPC_NOWAIT) != -1)
+        {
+            g_verbose = !!mbuf_options.verbose;
+            showfps_set(!!mbuf_options.fpsshow);
+
+            syslog(LOG_INFO, "(voglperf) showfps:%d verbose:%d\n", g_showfps, g_verbose);
+        }
     }
 }
 

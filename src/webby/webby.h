@@ -2,6 +2,7 @@
 #define WEBBY_H
 
 #include <stddef.h>
+#include <sys/time.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,7 +58,7 @@ struct WebbyConnection
 {
   /* The request being served. Read-only. */
   struct WebbyRequest request;
-  
+
   /* User data. Read-write. Webby doesn't care about this. */
   void *user_data;
 };
@@ -170,7 +171,7 @@ WebbyServerInit(struct WebbyServerConfig *config, void *memory, size_t memory_si
 
 /* Update the server. Call frequently (at least once per frame). */
 void
-WebbyServerUpdate(struct WebbyServer *srv);
+WebbyServerUpdate(struct WebbyServer *srv, struct timeval *timeoutval);
 
 /* Shutdown the server and close all sockets. */
 void

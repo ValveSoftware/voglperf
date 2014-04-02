@@ -32,6 +32,8 @@ target_link_libraries(${PROJECT_NAME}
     ${CMAKE_THREAD_LIBS_INIT}
     )
 
+build_options_finalize()
+
 #
 # voglperfrun
 #
@@ -50,6 +52,11 @@ set(SRC_LIST
     voglperfrun.cpp
     voglutils.cpp
     webby/webby.c)
+
+# Copy index.html to our build directory and add it to our binary.
+#  http://stackoverflow.com/questions/4864866/c-c-with-gcc-statically-add-resource-files-to-executable-library
+configure_file(index.html index.html COPYONLY)
+add_linker_flag("-Wl,--format=binary -Wl,index.html -Wl,--format=default")
 
 add_executable(${PROJECT_NAME} ${SRC_LIST})
 
