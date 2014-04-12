@@ -64,7 +64,7 @@ struct webby_init_t
 
 void webby_start(const webby_init_t &init);
 void webby_end();
-void webby_update(std::vector<std::string> *commands);
+void webby_update(std::vector<std::string> *commands, struct timeval *timeoutval);
 void webby_ws_printf(const char *format, ...);
 void webby_ws_write_buffer(struct WebbyConnection *connection, const char *buffer, size_t buffer_len);
 unsigned int webby_ws_get_connection_count();

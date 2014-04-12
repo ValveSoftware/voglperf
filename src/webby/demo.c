@@ -200,7 +200,7 @@ int main(int argc, char *argv[])
 
   while (!quit)
   {
-    WebbyServerUpdate(server);
+    WebbyServerUpdate(server, NULL);
 
     /* Push some test data over websockets */
     if (0 == (frame_counter & 0x7f))

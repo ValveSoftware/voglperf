@@ -30,8 +30,10 @@ enum
     MSGTYPE_FPS_NOTIFY = 2,
     MSGTYPE_LOGFILE_START_NOTIFY = 3,
     MSGTYPE_LOGFILE_STOP_NOTIFY = 4,
+    // Messages send from voglperfrun to hook.
     MSGTYPE_LOGFILE_START = 5,
-    MSGTYPE_LOGFILE_STOP = 6
+    MSGTYPE_LOGFILE_STOP = 6,
+    MSGTYPE_OPTIONS = 7
 };
 
 struct mbuf_pid_t
@@ -53,12 +55,19 @@ struct mbuf_fps_t
 struct mbuf_logfile_start_t
 {
     long mtype; // MSGTYPE_LOGFILE_START
-    char logfile[PATH_MAX];
     uint64_t time;
+    char logfile[PATH_MAX];
 };
 
 struct mbuf_logfile_stop_t
 {
     long mtype; // MSGTYPE_LOGFILE_STOP
     char logfile[PATH_MAX];
+};
+
+struct mbuf_options_t
+{
+    long mtype; // MSGTYPE_OPTIONS
+    uint16_t fpsshow;
+    uint16_t verbose;
 };

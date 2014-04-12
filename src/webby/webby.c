@@ -241,7 +241,7 @@ static size_t base64_bufsize(size_t input_size)
 
 static int base64_encode(char* output, size_t output_size, const unsigned char *input, size_t input_size)
 {
-  static const char enc[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="; 
+  static const char enc[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
   size_t i = 0;
   int line_out = 0;
 
@@ -370,7 +370,7 @@ static void sha1_update(struct sha1 *s, const void *data_, size_t size)
 
   size_lo = size_lo_orig = s->msg_size[1];
   size_lo += (unsigned int) (size * 8);
-  
+
   if (size_lo < size_lo_orig)
     s->msg_size[0] += 1;
 
@@ -649,7 +649,7 @@ static int wb_peek_request_size(const unsigned char *buf, int len)
 
   for (i = 0; i < max; ++i)
   {
-    if ('\r' != buf[i]) 
+    if ('\r' != buf[i])
       continue;
 
     if ('\n' != buf[i + 1])
@@ -795,7 +795,7 @@ static int wb_setup_request(struct WebbyServer *srv, struct WebbyConnectionPrv *
   }
   else
     req->query_params = NULL;
-  
+
   /* Decode the URI in place */
   {
     size_t uri_len = strlen(req->uri);
@@ -1075,7 +1075,7 @@ static void wb_update_client(struct WebbyServer *srv, struct WebbyConnectionPrv*
           return;
         }
 
-        /* Scan to see if the buffer has a complete HTTP request header package. */ 
+        /* Scan to see if the buffer has a complete HTTP request header package. */
         request_size = wb_peek_request_size(connection->header_buf.data, connection->header_buf.used);
 
         dbg(srv, "peek request size: %d", request_size);
@@ -1132,7 +1132,7 @@ static void wb_update_client(struct WebbyServer *srv, struct WebbyConnectionPrv*
         written = send(connection->socket, continue_header + continue_header_len - left, left, 0);
 
         dbg(srv, "continue write: %d bytes", written);
-        
+
         if (written < 0)
         {
           dbg(srv, "failed to write 100-continue header");
@@ -1241,7 +1241,7 @@ static void wb_update_client(struct WebbyServer *srv, struct WebbyConnectionPrv*
         /* In this state, we're trying to read a websocket frame into the I/O
          * buffer. Once we have enough data, we call the websocket frame
          * callback and let the client read the data through WebbyRead.
-         */ 
+         */
 
         if (WB_FILL_ERROR == wb_fill_buffer(srv, &connection->io_buf, connection->socket))
         {
@@ -1314,7 +1314,7 @@ static void wb_update_client(struct WebbyServer *srv, struct WebbyConnectionPrv*
 }
 
 void
-WebbyServerUpdate(struct WebbyServer *srv)
+WebbyServerUpdate(struct WebbyServer *srv, struct timeval *timeoutval)
 {
   int i, count, err;
   webby_socket_t max_socket;
@@ -1351,8 +1351,15 @@ WebbyServerUpdate(struct WebbyServer *srv)
     }
   }
 
-  timeout.tv_sec = 0;
-  timeout.tv_usec = 5;
+  if (timeoutval)
+  {
+    timeout = *timeoutval;
+  }
+  else
+  {
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 5;
+  }
 
   err = select((int) (max_socket + 1), &read_fds, &write_fds, &except_fds, &timeout);
 
