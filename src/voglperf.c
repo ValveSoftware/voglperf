@@ -52,24 +52,24 @@
 //----------------------------------------------------------------------------------------------------------------------
 // globals
 //----------------------------------------------------------------------------------------------------------------------
-int g_showfps = 0;
-int g_verbose = 0;
+static int g_showfps = 0;
+static int g_verbose = 0;
 
 // If we write 4000 frametimes of '0.25 ', that would be 20,000 bytes. So 32k should be enough to
 // handle a full second of reasonable frametimes.
-char g_logfile_name[PATH_MAX];
-int g_logfile_buf_len = 0;
-char g_logfile_buf[32 * 1024];
-int g_logfile_fd = -1;
-uint64_t g_logfile_time = 0;
+static char g_logfile_name[PATH_MAX];
+static int g_logfile_buf_len = 0;
+static char g_logfile_buf[32 * 1024];
+static int g_logfile_fd = -1;
+static uint64_t g_logfile_time = 0;
 
-int g_msqid = -1;
+static int g_msqid = -1;
 
 __attribute__((destructor)) static void vogl_perf_destructor_func();
 
 #define VOGL_X11_SYM(rc, fn, params, args, ret) \
     typedef rc(*VOGL_DYNX11FN_##fn) params;     \
-    VOGL_DYNX11FN_##fn X11_##fn;
+    static VOGL_DYNX11FN_##fn X11_##fn;
 
 VOGL_X11_SYM(XFontStruct *, XLoadQueryFont, (Display *a, _Xconst char *b), (a, b), return)
 VOGL_X11_SYM(GC, XCreateGC, (Display *a, Drawable b, unsigned long c, XGCValues *d), (a, b, c, d), return)
@@ -148,21 +148,22 @@ static glinfo_cache_t *get_glinfo(Display *dpy, GLXDrawable drawable)
 //----------------------------------------------------------------------------------------------------------------------
 static char *read_proc_file(const char *filename)
 {
-    uint file_length = 0;
-    int nbytes = 1024;
     char *filedata = NULL;
 
     int fd = open(filename, O_RDONLY);
     if (fd != -1)
     {
+        uint file_length = 0;
+        const int nbytes = 1024;
+
         for (;;)
         {
-            // Make sure we've got enough room to read in another nbytes.
-            char *data = (char *)realloc(filedata, file_length + nbytes);
+            // Make sure we've got enough room to read in another nbytes plus nil.
+            char *data = (char *)realloc(filedata, file_length + nbytes + 1);
             if (!data)
             {
-                free(filedata);
-                return NULL;
+                file_length = 0;
+                break;
             }
             filedata = data;
 
@@ -176,14 +177,23 @@ static char *read_proc_file(const char *filename)
                 break;
         }
 
+        if (file_length > 0)
+        {
+            // Trim trailing whitespace.
+            while ((file_length > 0) && isspace(filedata[file_length - 1]))
+                file_length--;
+
+            filedata[file_length] = 0;
+        }
+        else
+        {
+            free(filedata);
+            filedata = NULL;
+        }
+
         close(fd);
     }
 
-    // Trim trailing whitespace.
-    while ((file_length > 0) && isspace(filedata[file_length - 1]))
-        file_length--;
-
-    filedata[file_length] = 0;
     return filedata;
 }
 
@@ -350,10 +360,10 @@ static int voglperf_logfile_open(const char *logfile_name, uint64_t seconds)
 //----------------------------------------------------------------------------------------------------------------------
 static void showfps_set(int showfps)
 {
-#define LOADX11FUNC(_handle, _func)                      \
-    do                                                   \
-    {                                                    \
-      X11_##_func = vogl_load_function(_handle, #_func); \
+#define LOADX11FUNC(_handle, _func) \
+    do \
+    { \
+      X11_##_func = (VOGL_DYNX11FN_##_func) vogl_load_function(_handle, #_func); \
     } while (0)
 
     g_showfps = showfps;
@@ -591,11 +601,11 @@ static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_
             struct mbuf_fps_t mbuf;
 
             mbuf.mtype = MSGTYPE_FPS_NOTIFY;
-            mbuf.fps = s_frameinfo.frame_count * (double)g_BILLION / s_frameinfo.time_benchmark;
+            mbuf.fps = (float)(s_frameinfo.frame_count * (double)g_BILLION / s_frameinfo.time_benchmark);
             mbuf.frame_count = s_frameinfo.frame_count;
-            mbuf.frame_time = s_frameinfo.time_benchmark * g_rcpMILLION;
-            mbuf.frame_min =s_frameinfo.frame_min * g_rcpMILLION;
-            mbuf.frame_max = s_frameinfo.frame_max * g_rcpMILLION;
+            mbuf.frame_time = (float)(s_frameinfo.time_benchmark * g_rcpMILLION);
+            mbuf.frame_min = (float)(s_frameinfo.frame_min * g_rcpMILLION);
+            mbuf.frame_max = (float)(s_frameinfo.frame_max * g_rcpMILLION);
 
             snprintf(s_frameinfo.text, sizeof(s_frameinfo.text),
                          "%.2f fps frames:%u time:%.2fms min:%.2fms max:%.2fms",

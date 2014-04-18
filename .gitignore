@@ -1,0 +1,13 @@
+*~
+
+bin/libvoglperf32.so
+bin/libvoglperf64.so
+bin/voglperfrun32
+bin/voglperfrun64
+
+qtcreator/CMakeCache.txt
+qtcreator/CMakeFiles/
+qtcreator/CMakeLists.txt.user
+qtcreator/Makefile
+qtcreator/VoglProj.cbp
+qtcreator/cmake_install.cmake

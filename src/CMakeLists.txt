@@ -2,11 +2,9 @@ cmake_minimum_required(VERSION 2.8)
 
 message("")
 message("cmake options:")
-message("  -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}: Build debug or release. (debug|release)")
-message("  -DCMAKE_VERBOSE=${CMAKE_VERBOSE}: Spew cmake project options. (On|Off)")
-message("  -DBUILD_X64=${BUILD_X64}: Build 32 or 64-bit. (On|Off)")
-message("  -DCLANG_ANALYZE=[On|Off]: Do clang analyze build (will not link).")
-message("  -DCLANG_EVERYTHING=[On|Off]: Do clang build with -Weverything.")
+message("  -DCMAKE_BUILD_TYPE='${CMAKE_BUILD_TYPE}': Build debug or release. (Debug|Release)")
+message("  -DCMAKE_VERBOSE='${CMAKE_VERBOSE}': Spew cmake project options. (On|Off)")
+message("  -DBUILD_X64='${BUILD_X64}': Build 32 or 64-bit. (On|Off)")
 message("")
 
 #
@@ -39,9 +37,7 @@ build_options_finalize()
 #
 project(voglperfrun)
 
-message("MAKE_LIBRARY_ARCHITECTURE is ${CMAKE_LIBRARY_ARCHITECTURE}")
-
-# add libedit lib
+# Add libedit library.
 include_directories(${CMAKE_SOURCE_DIR}/libedit-3.1/include)
 set(LIBEDIT_LIBS
     "${CMAKE_SOURCE_DIR}/libedit-3.1/lib/${LIBDIR}/libedit.a"

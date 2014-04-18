@@ -7,9 +7,6 @@
 #
 cmake_minimum_required(VERSION 2.8)
 
-option(CLANG_ANALYZE "Do clang analyze build" OFF)
-option(CLANG_EVERYTHING "Do clang build with -Weverything" OFF)
-
 if( NOT DEFINED BUILD_X64 )
     option(BUILD_X64 "build 64-bit" FALSE)
     if( CMAKE_SIZEOF_VOID_P EQUAL 8 )
@@ -50,7 +47,7 @@ add_definitions(-D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES)
 # support for inttypes.h macros
 add_definitions(-D__STDC_LIMIT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_CONSTANT_MACROS)
 
-set(CMAKE_CXX_FLAGS_LIST "-g -Wall -Wextra")
+set(CMAKE_CXX_FLAGS_LIST "-g -Wall -Wextra -Wshadow")
 set(CMAKE_CXX_FLAGS_RELEASE_LIST "-g -O2 -DNDEBUG")
 set(CMAKE_CXX_FLAGS_DEBUG_LIST "-g -O0 -D_DEBUG")
 
@@ -62,30 +59,22 @@ if ("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
 endif()
 
 if ("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
-  if (CLANG_EVERYTHING)
-      set(CMAKE_CXX_FLAGS_LIST ${CMAKE_CXX_FLAGS_LIST}
-          "-pedantic"               # Warn on language extensions
-          "-fdiagnostics-show-name" # Enable display of diagnostic name
-          "-Weverything"            # Enable all warnings
-          "-Wno-unused-macros"
-          "-Wno-padded"
-          "-Wno-variadic-macros"
-          )
-  elseif(CLANG_ANALYZE)
-      set(CMAKE_CXX_FLAGS_LIST ${CMAKE_CXX_FLAGS_LIST}
-          "--analyze"
-          "-ferror-limit=0"         # Don't ever stop emitting diagnostics
-          "-fshow-column"           # Print column number in diagnostic.
-          "-fcaret-diagnostics"     # Print source line and ranges from source code in diagnostic
-          "-pedantic"               # Warn on language extensions
-          "-fdiagnostics-show-name" # Enable display of diagnostic name
-          "-Weverything"            # Enable all warnings
-          "-Wno-unused-macros"
-          "-Wno-padded"
-          "-Wno-variadic-macros"
-          # "-Wno-missing-prototypes"
-          )
-  endif()
+    set(CMAKE_CXX_FLAGS_LIST ${CMAKE_CXX_FLAGS_LIST}
+        "-pedantic"               # Warn on language extensions
+        "-Weverything"            # Enable all warnings
+        "-fdiagnostics-show-category=name"
+        "-Wno-unused-macros"
+        "-Wno-padded"
+        "-Wno-variadic-macros"
+        "-Wno-shorten-64-to-32"
+        "-Wno-sign-conversion"
+        "-Wno-format-nonliteral"
+        "-Wno-gnu-statement-expression"
+        "-Wno-exit-time-destructors"
+        "-Wno-language-extension-token"
+        "-Wno-cast-align"
+        "-Wno-disabled-macro-expansion"
+        )
 endif()
 
 if (NOT BUILD_X64)

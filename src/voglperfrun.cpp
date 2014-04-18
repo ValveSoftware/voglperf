@@ -55,7 +55,7 @@
 #define F_LOGFILE        0x00000080
 #define F_QUIT           0x00010000
 
-struct voglperf_options_t
+static struct voglperf_options_t
 {
     const char *name;
     int key;
@@ -480,7 +480,7 @@ static void game_start(voglperf_data_t &data)
 //----------------------------------------------------------------------------------------------------------------------
 // get_vogl_status_str
 //----------------------------------------------------------------------------------------------------------------------
-std::string get_vogl_status_str(voglperf_data_t &data)
+static std::string get_vogl_status_str(voglperf_data_t &data)
 {
     std::string status_str = string_format("Gameid: '%s'\n", data.gameid.c_str());
 
@@ -507,7 +507,7 @@ std::string get_vogl_status_str(voglperf_data_t &data)
 //----------------------------------------------------------------------------------------------------------------------
 // process_commands
 //----------------------------------------------------------------------------------------------------------------------
-void process_commands(voglperf_data_t &data)
+static void process_commands(voglperf_data_t &data)
 {
     static const char *s_commands[] =
     {
@@ -546,19 +546,19 @@ void process_commands(voglperf_data_t &data)
         {
             unsigned int flags_orig = data.flags;
 
-            for (size_t i = 0; i < sizeof(g_options) / sizeof(g_options[0]); i++)
+            for (size_t j = 0; j < sizeof(g_options) / sizeof(g_options[0]); j++)
             {
-                if (args[0] == g_options[i].name)
+                if (args[0] == g_options[j].name)
                 {
                     if (on)
-                        data.flags |= g_options[i].flag;
+                        data.flags |= g_options[j].flag;
                     else if(off)
-                        data.flags &= ~g_options[i].flag;
+                        data.flags &= ~g_options[j].flag;
 
-                    ws_reply += string_format("%s: %s\n", g_options[i].name, (data.flags & g_options[i].flag) ? "On" : "Off");
+                    ws_reply += string_format("%s: %s\n", g_options[j].name, (data.flags & g_options[j].flag) ? "On" : "Off");
 
                     // This is a launch option and the game is already running - warn them.
-                    if (on && g_options[i].launch_setting && (data.run_data.pid != (uint64_t)-1))
+                    if (on && g_options[j].launch_setting && (data.run_data.pid != (uint64_t)-1))
                         ws_reply += "  Option used with next game launch...\n";
 
                     handled = true;
@@ -599,11 +599,11 @@ void process_commands(voglperf_data_t &data)
         {
             ws_reply += "Commands:\n";
 
-            for (size_t i = 0; i < sizeof(s_commands) / sizeof(s_commands[0]); i++)
-                ws_reply += string_format("  %s\n", s_commands[i]);
+            for (size_t j = 0; j < sizeof(s_commands) / sizeof(s_commands[0]); j++)
+                ws_reply += string_format("  %s\n", s_commands[j]);
 
-            for (size_t i = 0; i < sizeof(g_options) / sizeof(g_options[0]); i++)
-                ws_reply += string_format("  %s [on | off]: %s\n", g_options[i].name, g_options[i].desc);
+            for (size_t j = 0; j < sizeof(g_options) / sizeof(g_options[0]); j++)
+                ws_reply += string_format("  %s [on | off]: %s\n", g_options[j].name, g_options[i].desc);
 
             handled = true;
         }
@@ -760,7 +760,7 @@ static void update_app_messages(voglperf_data_t &data)
 //----------------------------------------------------------------------------------------------------------------------
 // webby_connected_callback
 //----------------------------------------------------------------------------------------------------------------------
-std::string webby_connected_callback(void *user_data)
+static std::string webby_connected_callback(void *user_data)
 {
     voglperf_data_t *data = (voglperf_data_t *)user_data;
 
@@ -770,7 +770,7 @@ std::string webby_connected_callback(void *user_data)
 //----------------------------------------------------------------------------------------------------------------------
 // webby_uri_dispatch_callback
 //----------------------------------------------------------------------------------------------------------------------
-std::string webby_uri_dispatch_callback(const char *request_uri, void *user_data)
+static std::string webby_uri_dispatch_callback(const char *request_uri, void *user_data)
 {
     static const char logfile_prefix[] = "/logfile";
     static const std::string logfile_str = string_format("%s%s/voglperf.", logfile_prefix, P_tmpdir);

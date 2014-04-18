@@ -61,7 +61,11 @@ struct webby_data_t
     struct WebbyServer *server;
     struct WebbyServerConfig config;
 };
-static webby_data_t g_webby_data;
+static inline webby_data_t& webby_data()
+{
+    static webby_data_t s_webby_data;
+    return s_webby_data;
+}
 
 //----------------------------------------------------------------------------------------------------------------------
 // get_ip_addr
@@ -119,7 +123,7 @@ std::string get_ip_addr()
 //----------------------------------------------------------------------------------------------------------------------
 // get_config_dir
 //----------------------------------------------------------------------------------------------------------------------
-std::string get_config_dir()
+static std::string get_config_dir()
 {
     std::string config_dir;
     static const char *xdg_config_home = getenv("XDG_CONFIG_HOME");
@@ -198,7 +202,7 @@ std::string get_file_contents(const char *filename)
 //----------------------------------------------------------------------------------------------------------------------
 // Write a file.
 //----------------------------------------------------------------------------------------------------------------------
-void write_file_contents(const char *filename, std::string data)
+static void write_file_contents(const char *filename, std::string data)
 {
     FILE *fp = fopen(filename, "wb");
     if (fp)
@@ -235,8 +239,6 @@ std::string string_format(const char *fmt, ...)
 
         size = (n > -1) ? (n + 1) : (size * 2);
     }
-
-    return str;
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -480,11 +482,11 @@ void webby_ws_write_buffer(struct WebbyConnection *connection, const char *buffe
             WebbyWrite(connection, buffer, buffer_len);
             WebbyEndSocketFrame(connection);
         }
-        else if (g_webby_data.ws_connections.size())
+        else if (webby_data().ws_connections.size())
         {
-            for (size_t i = 0; i < g_webby_data.ws_connections.size(); ++i)
+            for (size_t i = 0; i < webby_data().ws_connections.size(); ++i)
             {
-                WebbyConnection *connection = g_webby_data.ws_connections[i];
+                connection = webby_data().ws_connections[i];
 
                 WebbyBeginSocketFrame(connection, WEBBY_WS_OP_TEXT_FRAME);
                 WebbyWrite(connection, buffer, buffer_len);
@@ -522,9 +524,9 @@ static void webby_log(const char* text)
 //----------------------------------------------------------------------------------------------------------------------
 static int webby_dispatch(struct WebbyConnection *connection)
 {
-    if (g_webby_data.init.uri_dispatch_pfn)
+    if (webby_data().init.uri_dispatch_pfn)
     {
-        std::string data = g_webby_data.init.uri_dispatch_pfn(connection->request.uri, connection->user_data);
+        std::string data = webby_data().init.uri_dispatch_pfn(connection->request.uri, connection->user_data);
 
         if (data.size())
         {
@@ -579,7 +581,7 @@ static int webby_ws_connect(struct WebbyConnection *connection)
     // Allow websocket upgrades on /ws.
     if (!strcmp(connection->request.uri, "/ws"))
     {
-        if (g_webby_data.ws_connections.size() >= webby_data_t::MAX_WSCONN)
+        if (webby_data().ws_connections.size() >= webby_data_t::MAX_WSCONN)
         {
             printf("[webby] WARNING: No more websocket connections left (%d).\n", webby_data_t::MAX_WSCONN);
             return 1;
@@ -596,15 +598,15 @@ static int webby_ws_connect(struct WebbyConnection *connection)
 //----------------------------------------------------------------------------------------------------------------------
 static void webby_ws_connected(struct WebbyConnection *connection)
 {
-    g_webby_data.ws_connections.push_back(connection);
+    webby_data().ws_connections.push_back(connection);
 
     printf("[webby] WebSocket connected %s on %s\n", connection->request.method, connection->request.uri);
 
     webby_ws_write_buffer(connection, "Welcome!\n", -1);
 
-    if (g_webby_data.init.ws_connected_pfn)
+    if (webby_data().init.ws_connected_pfn)
     {
-        std::string data = g_webby_data.init.ws_connected_pfn(connection->user_data);
+        std::string data = webby_data().init.ws_connected_pfn(connection->user_data);
 
         if (data.size())
         {
@@ -620,16 +622,16 @@ static void webby_ws_connected(struct WebbyConnection *connection)
 //----------------------------------------------------------------------------------------------------------------------
 static void webby_ws_closed(struct WebbyConnection *connection)
 {
-    if (g_webby_data.init.verbose)
+    if (webby_data().init.verbose)
     {
         printf("[webby] WebSocket closed %s on %s\n", connection->request.method, connection->request.uri);
     }
 
-    for (size_t i = 0; i < g_webby_data.ws_connections.size(); i++)
+    for (size_t i = 0; i < webby_data().ws_connections.size(); i++)
     {
-        if (g_webby_data.ws_connections[i] == connection)
+        if (webby_data().ws_connections[i] == connection)
         {
-            g_webby_data.ws_connections.erase(g_webby_data.ws_connections.begin() + i);
+            webby_data().ws_connections.erase(webby_data().ws_connections.begin() + i);
             break;
         }
     }
@@ -640,16 +642,16 @@ static void webby_ws_closed(struct WebbyConnection *connection)
 //----------------------------------------------------------------------------------------------------------------------
 unsigned int webby_ws_get_connection_count()
 {
-    if (g_webby_data.init.verbose)
+    if (webby_data().init.verbose)
     {
         printf("webby_ws_get_connection_count\n");
-        for (size_t i = 0; i < g_webby_data.ws_connections.size(); i++)
+        for (size_t i = 0; i < webby_data().ws_connections.size(); i++)
         {
-            printf("  0x%p\n", g_webby_data.ws_connections[i]);
+            printf("  0x%p\n", webby_data().ws_connections[i]);
         }
     }
 
-    return g_webby_data.ws_connections.size();
+    return webby_data().ws_connections.size();
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -657,7 +659,7 @@ unsigned int webby_ws_get_connection_count()
 //----------------------------------------------------------------------------------------------------------------------
 static int webby_ws_frame(struct WebbyConnection *connection, const struct WebbyWsFrame *frame)
 {
-    if (g_webby_data.init.verbose)
+    if (webby_data().init.verbose)
     {
         printf("WebSocket frame incoming\n");
         printf("  Frame OpCode: %d\n", frame->opcode);
@@ -676,7 +678,7 @@ static int webby_ws_frame(struct WebbyConnection *connection, const struct Webby
         size_t read_size = remain > (int) sizeof(buffer) ? sizeof(buffer) : (size_t)remain;
         size_t k;
 
-        if (g_webby_data.init.verbose)
+        if (webby_data().init.verbose)
         {
             printf("%08x ", (int) i);
         }
@@ -684,7 +686,7 @@ static int webby_ws_frame(struct WebbyConnection *connection, const struct Webby
         if (0 != WebbyRead(connection, buffer, read_size))
             break;
 
-        if (g_webby_data.init.verbose)
+        if (webby_data().init.verbose)
         {
             for (k = 0; k < read_size; ++k)
                 printf("%02x ", buffer[k]);
@@ -704,7 +706,7 @@ static int webby_ws_frame(struct WebbyConnection *connection, const struct Webby
         i += read_size;
     }
 
-    g_webby_data.ws_commands.push_back(command);
+    webby_data().ws_commands.push_back(command);
     return 0;
 }
 
@@ -715,37 +717,37 @@ void webby_start(const webby_init_t& init)
 {
     printf("\nStarting web server...\n");
 
-    memset(&g_webby_data.config, 0, sizeof(g_webby_data.config));
+    memset(&webby_data().config, 0, sizeof(webby_data().config));
 
-    g_webby_data.init = init;
+    webby_data().init = init;
 
-    g_webby_data.config.user_data = init.user_data;
-    g_webby_data.config.bind_address = init.bind_address;
-    g_webby_data.config.listening_port = init.port;
-    g_webby_data.config.flags = WEBBY_SERVER_WEBSOCKETS;
-    g_webby_data.config.connection_max = 4;
-    g_webby_data.config.request_buffer_size = 2048;
-    g_webby_data.config.io_buffer_size = 8192;
-    g_webby_data.config.dispatch = &webby_dispatch;
-    g_webby_data.config.log = &webby_log;
-    g_webby_data.config.ws_connect = &webby_ws_connect;
-    g_webby_data.config.ws_connected = &webby_ws_connected;
-    g_webby_data.config.ws_closed = &webby_ws_closed;
-    g_webby_data.config.ws_frame = &webby_ws_frame;
+    webby_data().config.user_data = init.user_data;
+    webby_data().config.bind_address = init.bind_address;
+    webby_data().config.listening_port = init.port;
+    webby_data().config.flags = WEBBY_SERVER_WEBSOCKETS;
+    webby_data().config.connection_max = 4;
+    webby_data().config.request_buffer_size = 2048;
+    webby_data().config.io_buffer_size = 8192;
+    webby_data().config.dispatch = &webby_dispatch;
+    webby_data().config.log = &webby_log;
+    webby_data().config.ws_connect = &webby_ws_connect;
+    webby_data().config.ws_connected = &webby_ws_connected;
+    webby_data().config.ws_closed = &webby_ws_closed;
+    webby_data().config.ws_frame = &webby_ws_frame;
 
     if (init.verbose)
     {
-        g_webby_data.config.flags |= WEBBY_SERVER_LOG_DEBUG;
+        webby_data().config.flags |= WEBBY_SERVER_LOG_DEBUG;
     }
 
-    g_webby_data.memory_size = WebbyServerMemoryNeeded(&g_webby_data.config);
-    g_webby_data.memory = malloc(g_webby_data.memory_size);
-    g_webby_data.server = WebbyServerInit(&g_webby_data.config, g_webby_data.memory, g_webby_data.memory_size);
+    webby_data().memory_size = WebbyServerMemoryNeeded(&webby_data().config);
+    webby_data().memory = malloc(webby_data().memory_size);
+    webby_data().server = WebbyServerInit(&webby_data().config, webby_data().memory, webby_data().memory_size);
 
-    if (!g_webby_data.server)
+    if (!webby_data().server)
         errorf("ERROR: Web server failed to initialize.\n");
 
-    printf("  Started http://%s:%u\n\n", g_webby_data.config.bind_address, g_webby_data.config.listening_port);
+    printf("  Started http://%s:%u\n\n", webby_data().config.bind_address, webby_data().config.listening_port);
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -753,15 +755,15 @@ void webby_start(const webby_init_t& init)
 //----------------------------------------------------------------------------------------------------------------------
 void webby_update(std::vector<std::string> *commands, struct timeval *timeoutval)
 {
-    if (g_webby_data.server)
+    if (webby_data().server)
     {
-        WebbyServerUpdate(g_webby_data.server, timeoutval);
+        WebbyServerUpdate(webby_data().server, timeoutval);
 
         // If we were passed a command array, add new commands to it.
-        if (commands && g_webby_data.ws_commands.size())
+        if (commands && webby_data().ws_commands.size())
         {
-            commands->insert(commands->end(), g_webby_data.ws_commands.begin(), g_webby_data.ws_commands.end());
-            g_webby_data.ws_commands.clear();
+            commands->insert(commands->end(), webby_data().ws_commands.begin(), webby_data().ws_commands.end());
+            webby_data().ws_commands.clear();
         }
     }
 }
@@ -771,18 +773,18 @@ void webby_update(std::vector<std::string> *commands, struct timeval *timeoutval
 //----------------------------------------------------------------------------------------------------------------------
 void webby_end()
 {
-    g_webby_data.ws_connections.empty();
+    webby_data().ws_connections.empty();
 
-    if (g_webby_data.server)
+    if (webby_data().server)
     {
-        WebbyServerShutdown(g_webby_data.server);
-        g_webby_data.server = NULL;
+        WebbyServerShutdown(webby_data().server);
+        webby_data().server = NULL;
     }
 
-    if (g_webby_data.memory)
+    if (webby_data().memory)
     {
-        free(g_webby_data.memory);
-        g_webby_data.memory = NULL;
-        g_webby_data.memory_size = 0;
+        free(webby_data().memory);
+        webby_data().memory = NULL;
+        webby_data().memory_size = 0;
     }
 }

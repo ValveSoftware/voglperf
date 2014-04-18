@@ -1362,6 +1362,7 @@ WebbyServerUpdate(struct WebbyServer *srv, struct timeval *timeoutval)
   }
 
   err = select((int) (max_socket + 1), &read_fds, &write_fds, &except_fds, &timeout);
+  //$ TODO: err is ignored...
 
   /* Handle incoming connections */
   if (FD_ISSET(srv->socket, &read_fds))
