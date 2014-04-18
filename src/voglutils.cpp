@@ -343,18 +343,25 @@ bool parse_appid_file(std::vector<gameid_t>& installed_games)
         { 211820, "Starbound" }, // 64-bit game
     };
 
-    // Try to find our appids.txt file.
+    //
+    // Run "steam -dev" and in the console tab run the "apps_installed" command.
+    // Paste that data into an appids.txt file and voglperfrun will parse it and allow
+    //  you to specify the game name with the voglperfrun command. Ie:
+    //    voglperfrun64 --showfps --logfile "Team Fortress 2"
+    //
+    // File should look something like this:
+    //    AppID 400 : "Portal" : /home/mikesart/.local/share/Steam/steamapps/common/Portal 
+    //    AppID 440 : "Team Fortress 2" : /home/mikesart/.local/share/Steam/steamapps/common/Team Fortress 2 
+    //
+    // Note that all this should go away soon when voglperf gets into Steam.
+    //
+
     FILE *file = fopen("appids.txt", "r");
     if (!file)
     {
-        char exe[PATH_MAX];
-        if (readlink("/proc/self/exe", exe, sizeof(exe)) > 0)
-        {
-            // Try where the binary currently exists.
-            std::string filename = dirname(exe);
-            filename += "/appids.txt";
-            file = fopen(filename.c_str(), "r");
-        }
+        // Try ~/.config/voglperf/appids.txt
+        std::string filename = get_config_dir() + "/appids.txt";
+        file = fopen(filename.c_str(), "r");
     }
 
     if (file)
