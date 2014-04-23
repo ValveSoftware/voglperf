@@ -7,10 +7,14 @@
 #
 cmake_minimum_required(VERSION 2.8)
 
-if( NOT DEFINED BUILD_X64 )
-    option(BUILD_X64 "build 64-bit" FALSE)
-    if( CMAKE_SIZEOF_VOID_P EQUAL 8 )
-        set(BUILD_X64 TRUE)
+set(BUILD_X64 "" CACHE STRING "whether to perform 64-bit build: ON or OFF overrides default detection")
+
+# Unless user specifies BUILD_X64 explicitly, assume native target                                                                                                                  
+if (BUILD_X64 STREQUAL "")
+    if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(BUILD_X64 "TRUE")
+    else()
+        set(BUILD_X64 "FALSE")
     endif()
 endif()
 
