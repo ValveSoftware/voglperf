@@ -149,7 +149,7 @@ static error_t parse_options(int key, char *arg, struct argp_state *state)
                 // These are arguments to our program, e.g. if the user wants to run:
                 //   "voglperfrun -- glxgears -info",
                 // we get "-info".
-                arguments->game_args += std::string(" \"") + state->argv[state->next - 1] + "\"";
+                arguments->game_args += std::string("\"") + state->argv[state->next - 1] + "\"";
             }
             else
             {
@@ -494,6 +494,9 @@ static std::string get_vogl_status_str(voglperf_data_t &data)
         status_str += data.run_data.launch_cmd;
     }
 
+    if (data.game_args.size())
+        status_str += string_format("  Game Args: %s\n", data.game_args.c_str());
+
     std::string launch_str(" (Launch option)");
     for (size_t i = 0; i < sizeof(g_options) / sizeof(g_options[0]); i++)
     {
@@ -515,6 +518,7 @@ static void process_commands(voglperf_data_t &data)
         "game stop: Send SIGTERM signal to game.",
 
         "game set (steamid | filename): Set gameid to launch.",
+        "game args: set game arguments.",
 
         "logfile start [seconds]: Start capturing frame time data to filename.",
         "logfile stop: Stop capturing frame time data.",
@@ -616,7 +620,14 @@ static void process_commands(voglperf_data_t &data)
         }
         else if (args[0] == "game")
         {
-            if ((args[1] == "set") && args[2].size())
+            if (args[1] == "args")
+            {
+                size_t pos = command.find("args") + 5;
+                data.game_args = command.substr(pos);
+                
+                handled = true;
+            }
+            else if ((args[1] == "set") && args[2].size())
             {
                 data.gameid = args[2];
                 ws_reply += "Gameid set to '" + data.gameid + "'";
