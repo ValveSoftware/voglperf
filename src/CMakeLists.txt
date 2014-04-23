@@ -21,6 +21,10 @@ add_compiler_flag("-fno-exceptions")
 
 add_shared_linker_flag("-Wl,--version-script=${PROJECT_SOURCE_DIR}/libvoglperf_linker_script.txt")
 
+# We need a DT_NEEDED entry for libGL so it will get loaded in our namespace under us and we need
+#  to make sure the linker doesn't remove it since we're not actually calling any libGL functions.
+add_shared_linker_flag("-Wl,--no-as-needed")
+
 add_library(${PROJECT_NAME} SHARED ${SRC_LIST})
 
 target_link_libraries(${PROJECT_NAME}
@@ -28,6 +32,7 @@ target_link_libraries(${PROJECT_NAME}
     rt
     m
     ${CMAKE_THREAD_LIBS_INIT}
+    GL
     )
 
 build_options_finalize()

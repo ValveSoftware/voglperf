@@ -35,6 +35,7 @@
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <sys/msg.h>
+#include <execinfo.h>
 
 #define __USE_GNU
 #include <dlfcn.h>
@@ -76,8 +77,9 @@ VOGL_X11_SYM(GC, XCreateGC, (Display *a, Drawable b, unsigned long c, XGCValues 
 VOGL_X11_SYM(int, XDrawString, (Display *a, Drawable b, GC c, int d, int e, _Xconst char *f, int g), (a, b, c, d, e, f, g), return)
 
 typedef const GLubyte *(*GLAPIENTRY glGetString_func_ptr_t)(GLenum name);
-typedef Bool (*glXMakeCurrent_func_ptr_t)(Display *dpy, GLXDrawable drawable, GLXContext ctx);
-typedef void (*glXSwapBuffers_func_ptr_t)(Display *dpy, GLXDrawable drawable);
+typedef Bool (*GLAPIENTRY glXMakeCurrent_func_ptr_t)(Display *dpy, GLXDrawable drawable, GLXContext ctx);
+typedef void (*GLAPIENTRY glXSwapBuffers_func_ptr_t)(Display *dpy, GLXDrawable drawable);
+typedef void *(*dlopen_func_ptr_t)(const char *pFile, int mode);
 
 static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_logfile);
 
@@ -497,7 +499,7 @@ static void voglperf_init()
 // glXMakeCurrent interceptor
 //$ TODO: Need to hook glXMakeCurrentReadSGI_func_ptr_t?
 //----------------------------------------------------------------------------------------------------------------------
-VOGL_API_EXPORT Bool glXMakeCurrent(Display *dpy, GLXDrawable drawable, GLXContext ctx)
+VOGL_API_EXPORT Bool GLAPIENTRY glXMakeCurrent(Display *dpy, GLXDrawable drawable, GLXContext ctx)
 {
     static glXMakeCurrent_func_ptr_t s_pActual_glXMakeCurrent;
 
@@ -723,7 +725,7 @@ static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_
 //----------------------------------------------------------------------------------------------------------------------
 // glXSwapBuffers interceptor
 //----------------------------------------------------------------------------------------------------------------------
-VOGL_API_EXPORT void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
+VOGL_API_EXPORT void GLAPIENTRY glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 {
     static glXSwapBuffers_func_ptr_t s_pActual_glXSwapBuffers;
 
@@ -745,6 +747,89 @@ VOGL_API_EXPORT void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
     (*s_pActual_glXSwapBuffers)(dpy, drawable);
 
     voglperf_swap_buffers(dpy, drawable, 0);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// get_current_module_fname
+//----------------------------------------------------------------------------------------------------------------------
+static const char *get_current_module_fname()
+{
+    Dl_info dl_info;
+    void *paddr = __builtin_return_address(0);
+
+    if (paddr && dladdr(paddr, &dl_info) && dl_info.dli_fname)
+        return dl_info.dli_fname;
+
+    return NULL;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// get_calling_module_name
+//----------------------------------------------------------------------------------------------------------------------
+static const char *get_calling_module_name()
+{
+    int i;
+    void *buffers[8];
+    const char *calling_fname = NULL;
+    int nptrs = backtrace(buffers, sizeof(buffers) / sizeof(buffers[0]));
+
+    for (i = 0; i < nptrs; i++)
+    {
+        void *addr = buffers[i];
+        Dl_info dl_info;
+
+        // Get module name.
+        if (dladdr(addr, &dl_info) == 0)
+            return NULL;
+
+        if (dl_info.dli_fname)
+        {
+            if (!calling_fname)
+            {
+                calling_fname = dl_info.dli_fname;
+            }
+            else if(strcmp(calling_fname, dl_info.dli_fname))
+            {
+                return dl_info.dli_fname;
+            }
+        }
+    }
+
+    return NULL;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// dlopen hook
+//----------------------------------------------------------------------------------------------------------------------
+VOGL_API_EXPORT void *dlopen(const char *pFile, int mode)
+{
+    static dlopen_func_ptr_t s_pActual_dlopen;
+
+    if (!s_pActual_dlopen)
+    {
+        s_pActual_dlopen = (dlopen_func_ptr_t)dlsym(RTLD_NEXT, "dlopen");
+        if (!s_pActual_dlopen)
+            return NULL;
+    }
+
+    // When folks try to dlopen libGL, return handle to our module instead.
+    // This puts our interposed functions at the top of the namespace.
+    if (pFile && (strstr(pFile, "libGL.so") != NULL))
+    {
+        // Workaround for amd driver as they really do need libGL or we may crash.
+        const char *calling_module = get_calling_module_name();
+        int should_redirect = !strstr(calling_module, "fglrx");
+
+        if (should_redirect)
+        {
+            const char *fname = get_current_module_fname();
+            syslog(LOG_INFO, "(vogltrace) redirecting dlopen(%s) to %s\n", pFile, fname);
+            pFile = fname;
+        }
+    }
+
+    // Call real dlopen function.
+    return (*s_pActual_dlopen)(pFile, mode);
 }
 
 //----------------------------------------------------------------------------------------------------------------------
