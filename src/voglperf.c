@@ -752,10 +752,10 @@ VOGL_API_EXPORT void GLAPIENTRY glXSwapBuffers(Display *dpy, GLXDrawable drawabl
 //----------------------------------------------------------------------------------------------------------------------
 // get_current_module_fname
 //----------------------------------------------------------------------------------------------------------------------
-static const char *get_current_module_fname()
+const char * __attribute__ ((noinline)) get_current_module_fname()
 {
     Dl_info dl_info;
-    void *paddr = __builtin_return_address(0);
+    void *paddr = get_current_module_fname;
 
     if (paddr && dladdr(paddr, &dl_info) && dl_info.dli_fname)
         return dl_info.dli_fname;
