@@ -57,9 +57,10 @@ project(voglperfrun)
 
 # Add libedit library.
 include_directories(${CMAKE_SOURCE_DIR}/libedit-3.1/include)
+find_library(tinfo_LIBRARY NAMES tinfo curses)
 set(LIBEDIT_LIBS
     "${CMAKE_SOURCE_DIR}/libedit-3.1/lib/${LIBDIR}/libedit.a"
-    tinfo
+    ${tinfo_LIBRARY}
     )
 
 set(SRC_LIST
