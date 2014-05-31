@@ -81,27 +81,30 @@ std::string get_ip_addr()
 
     for (struct ifaddrs *ifa = ifAddrStruct; ifa; ifa = ifa->ifa_next)
     {
-        if (ifa ->ifa_addr->sa_family == AF_INET)
+        if (ifa->ifa_addr != NULL ) // tuntap interfaces may return NULL here
         {
-            // IP4 address.
-            char addressBuffer[INET_ADDRSTRLEN];
-            void *tmpAddrPtr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+            if (ifa ->ifa_addr->sa_family == AF_INET)
+            {
+                // IP4 address.
+                char addressBuffer[INET_ADDRSTRLEN];
+                void *tmpAddrPtr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
 
-            inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+                inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
 
-            if (!(ifa->ifa_flags & IFF_LOOPBACK) || !ret4.length())
-                ret4 = addressBuffer;
-        }
-        else if (ifa->ifa_addr->sa_family == AF_INET6)
-        {
-            // IP6 address.
-            char addressBuffer[INET6_ADDRSTRLEN];
-            void *tmpAddrPtr=&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
+                if (!(ifa->ifa_flags & IFF_LOOPBACK) || !ret4.length())
+                    ret4 = addressBuffer;
+            }
+            else if (ifa->ifa_addr->sa_family == AF_INET6)
+            {
+                // IP6 address.
+                char addressBuffer[INET6_ADDRSTRLEN];
+                void *tmpAddrPtr=&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
 
-            inet_ntop(AF_INET6, tmpAddrPtr, addressBuffer, INET6_ADDRSTRLEN);
+                inet_ntop(AF_INET6, tmpAddrPtr, addressBuffer, INET6_ADDRSTRLEN);
 
-            if (!(ifa->ifa_flags & IFF_LOOPBACK) || !ret6.length())
-                ret6 = addressBuffer;
+                if (!(ifa->ifa_flags & IFF_LOOPBACK) || !ret6.length())
+                    ret6 = addressBuffer;
+            }
         }
     }
 
