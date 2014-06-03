@@ -31,6 +31,8 @@ else()
     set(CMAKE_SHARED_LIBRARY_SUFFIX "32.so")
     # TODO: get dir from: gcc -print-multiarch -m32
     set(LIBDIR "i386-linux-gnu")
+    set_property(GLOBAL PROPERTY FIND_LIBRARY_USE_LIB64_PATHS False)
+    list(APPEND CMAKE_LIBRARY_PATH /usr/lib32 /usr/local/lib32)
 endif()
 
 option(CMAKE_VERBOSE "Verbose CMake" FALSE)
