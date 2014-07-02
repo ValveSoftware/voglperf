@@ -1,7 +1,7 @@
 #
-# VoglProj QtCreator cmake source tag file.
+# VoglPerf QtCreator cmake source tag file.
 #
-project(VoglProj)
+project(VoglPerf)
 cmake_minimum_required(VERSION 2.8)
 
 # List of file extensions that we search for.
@@ -61,6 +61,6 @@ include_directories(${dir_list})
 
 message("${count} files added.\n")
 
-add_executable(VoglProj ${vogl_srcs})
-set_target_properties(VoglProj PROPERTIES LINKER_LANGUAGE CXX)
+add_executable(VoglPerf ${vogl_srcs})
+set_target_properties(VoglPerf PROPERTIES LINKER_LANGUAGE CXX)
 
