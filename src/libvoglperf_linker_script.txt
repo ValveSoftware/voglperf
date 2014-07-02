@@ -2,6 +2,7 @@
   global:
     glXSwapBuffers;
     glXMakeCurrent;
+    glXGetProcAddressARB;
     dlopen;
   local:
     *;

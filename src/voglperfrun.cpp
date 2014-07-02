@@ -149,7 +149,7 @@ static error_t parse_options(int key, char *arg, struct argp_state *state)
                 // These are arguments to our program, e.g. if the user wants to run:
                 //   "voglperfrun -- glxgears -info",
                 // we get "-info".
-                arguments->game_args += std::string("\"") + state->argv[state->next - 1] + "\"";
+                arguments->game_args += std::string("\"") + state->argv[state->next - 1] + "\" ";
             }
             else
             {

@@ -67,21 +67,27 @@ static uint64_t g_logfile_time = 0;
 static int g_msqid = -1;
 
 __attribute__((destructor)) static void vogl_perf_destructor_func();
+static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_logfile);
 
 #define VOGL_X11_SYM(rc, fn, params, args, ret) \
-    typedef rc(*VOGL_DYNX11FN_##fn) params;     \
+    typedef rc (*VOGL_DYNX11FN_##fn) params;    \
     static VOGL_DYNX11FN_##fn X11_##fn;
 
 VOGL_X11_SYM(XFontStruct *, XLoadQueryFont, (Display *a, _Xconst char *b), (a, b), return)
 VOGL_X11_SYM(GC, XCreateGC, (Display *a, Drawable b, unsigned long c, XGCValues *d), (a, b, c, d), return)
 VOGL_X11_SYM(int, XDrawString, (Display *a, Drawable b, GC c, int d, int e, _Xconst char *f, int g), (a, b, c, d, e, f, g), return)
 
-typedef const GLubyte *(*GLAPIENTRY glGetString_func_ptr_t)(GLenum name);
-typedef Bool (*GLAPIENTRY glXMakeCurrent_func_ptr_t)(Display *dpy, GLXDrawable drawable, GLXContext ctx);
-typedef void (*GLAPIENTRY glXSwapBuffers_func_ptr_t)(Display *dpy, GLXDrawable drawable);
-typedef void *(*dlopen_func_ptr_t)(const char *pFile, int mode);
-
-static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_logfile);
+#define HOOK_FUNC(_func, _ret, ...)                                     \
+    typedef _ret (*GLAPIENTRY func_ptr_t)(__VA_ARGS__);                 \
+    static func_ptr_t s_orig_func = NULL;                               \
+    if (!s_orig_func)                                                   \
+    {                                                                   \
+        s_orig_func = (func_ptr_t)dlsym(RTLD_NEXT, _func);              \
+        if (!s_orig_func)                                               \
+        {                                                               \
+            syslog(LOG_ERR, "(voglperf) dlsym(%s) failed.\n", _func);   \
+        }                                                               \
+    }
 
 // Use get_glinfo() to get gl/vendor/renderer/version associated with dpy+drawable
 typedef struct glinfo_cache_t
@@ -501,14 +507,9 @@ static void voglperf_init()
 //----------------------------------------------------------------------------------------------------------------------
 VOGL_API_EXPORT Bool GLAPIENTRY glXMakeCurrent(Display *dpy, GLXDrawable drawable, GLXContext ctx)
 {
-    static glXMakeCurrent_func_ptr_t s_pActual_glXMakeCurrent;
-
-    if (!s_pActual_glXMakeCurrent)
-    {
-        s_pActual_glXMakeCurrent = (glXMakeCurrent_func_ptr_t)dlsym(RTLD_NEXT, "glXMakeCurrent");
-        if (!s_pActual_glXMakeCurrent)
-            return False;
-    }
+    HOOK_FUNC("glXMakeCurrent", Bool, Display *dpy, GLXDrawable drawable, GLXContext ctx);
+    if (!s_orig_func)
+        return False;
 
     voglperf_init();
 
@@ -517,13 +518,14 @@ VOGL_API_EXPORT Bool GLAPIENTRY glXMakeCurrent(Display *dpy, GLXDrawable drawabl
         syslog(LOG_INFO, "(voglperf) %s %p %lu %p\n", __PRETTY_FUNCTION__, dpy, drawable, ctx);
     }
 
-    Bool ret = (*s_pActual_glXMakeCurrent)(dpy, drawable, ctx);
+    Bool ret = (*s_orig_func)(dpy, drawable, ctx);
     if (!ret)
         return ret;
 
     glinfo_cache_t *glinfo = get_glinfo(dpy, drawable);
     if (glinfo)
     {
+        typedef const GLubyte *(*GLAPIENTRY glGetString_func_ptr_t)(GLenum name);
         static glGetString_func_ptr_t s_pActual_glGetString;
 
         if (!s_pActual_glGetString)
@@ -727,14 +729,9 @@ static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_
 //----------------------------------------------------------------------------------------------------------------------
 VOGL_API_EXPORT void GLAPIENTRY glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 {
-    static glXSwapBuffers_func_ptr_t s_pActual_glXSwapBuffers;
-
-    if (!s_pActual_glXSwapBuffers)
-    {
-        s_pActual_glXSwapBuffers = (glXSwapBuffers_func_ptr_t)dlsym(RTLD_NEXT, "glXSwapBuffers");
-        if (!s_pActual_glXSwapBuffers)
-            return;
-    }
+    HOOK_FUNC("glXSwapBuffers", Bool, Display *dpy, GLXDrawable drawable);
+    if (!s_orig_func)
+        return;
 
     voglperf_init();
 
@@ -744,9 +741,37 @@ VOGL_API_EXPORT void GLAPIENTRY glXSwapBuffers(Display *dpy, GLXDrawable drawabl
     }
 
     // Call real glxSwapBuffers function.
-    (*s_pActual_glXSwapBuffers)(dpy, drawable);
+    (*s_orig_func)(dpy, drawable);
 
     voglperf_swap_buffers(dpy, drawable, 0);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// glXGetProcAddressARB interceptor
+//----------------------------------------------------------------------------------------------------------------------
+VOGL_API_EXPORT __GLXextFuncPtr GLAPIENTRY glXGetProcAddressARB(const GLubyte *procname)
+{
+    HOOK_FUNC("glXGetProcAddressARB", __GLXextFuncPtr, const GLubyte *procname);
+    if (!s_orig_func)
+        return NULL;
+
+    if (procname)
+    {
+        __GLXextFuncPtr ret = NULL;
+
+        if (!strcmp((const char *)procname, "glXSwapBuffers"))
+            ret = (__GLXextFuncPtr)glXSwapBuffers;
+        else if (!strcmp((const char *)procname, "glXMakeCurrent"))
+            ret = (__GLXextFuncPtr)glXMakeCurrent;
+
+        if (ret)
+        {
+            syslog(LOG_INFO, "(voglperf) %s hooking %s.\n", __FUNCTION__, procname);
+            return ret;
+        }
+    }
+
+    return (*s_orig_func)(procname);
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -755,9 +780,8 @@ VOGL_API_EXPORT void GLAPIENTRY glXSwapBuffers(Display *dpy, GLXDrawable drawabl
 const char * __attribute__ ((noinline)) get_current_module_fname()
 {
     Dl_info dl_info;
-    void *paddr = get_current_module_fname;
 
-    if (paddr && dladdr(paddr, &dl_info) && dl_info.dli_fname)
+    if (dladdr(get_current_module_fname, &dl_info) && dl_info.dli_fname)
         return dl_info.dli_fname;
 
     return NULL;
@@ -803,14 +827,12 @@ static const char *get_calling_module_name()
 //----------------------------------------------------------------------------------------------------------------------
 VOGL_API_EXPORT void *dlopen(const char *pFile, int mode)
 {
-    static dlopen_func_ptr_t s_pActual_dlopen;
+    HOOK_FUNC("dlopen", void *, const char *pFile, int mode);
+    if (!s_orig_func)
+        return NULL;
 
-    if (!s_pActual_dlopen)
-    {
-        s_pActual_dlopen = (dlopen_func_ptr_t)dlsym(RTLD_NEXT, "dlopen");
-        if (!s_pActual_dlopen)
-            return NULL;
-    }
+    if (pFile)
+        syslog(LOG_INFO, "(voglperf) dlopen %s %d\n", pFile, mode);
 
     // When folks try to dlopen libGL, return handle to our module instead.
     // This puts our interposed functions at the top of the namespace.
@@ -823,13 +845,36 @@ VOGL_API_EXPORT void *dlopen(const char *pFile, int mode)
         if (should_redirect)
         {
             const char *fname = get_current_module_fname();
-            syslog(LOG_INFO, "(vogltrace) redirecting dlopen(%s) to %s\n", pFile, fname);
+            syslog(LOG_INFO, "(voglperf) redirecting dlopen(%s) to %s\n", pFile, fname);
             pFile = fname;
         }
     }
 
     // Call real dlopen function.
-    return (*s_pActual_dlopen)(pFile, mode);
+    return (*s_orig_func)(pFile, mode);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+// vogl_perf_constructor_func
+//----------------------------------------------------------------------------------------------------------------------
+__attribute__((constructor)) static void vogl_perf_constructor_func()
+{
+    voglperf_init();
+
+#if 0
+    static const char libgl[] = "libGL.so";
+    static void *libgl_handle = NULL;
+
+    if (!libgl_handle)
+    {
+        // LOG_INFO, LOG_WARNING, LOG_ERR
+        openlog(NULL, LOG_CONS | LOG_PERROR | LOG_PID, LOG_USER);
+
+        libgl_handle = dlopen(libgl, RTLD_NOW | RTLD_GLOBAL);
+        if (!libgl_handle)
+            syslog(LOG_ERR, "(voglperf) dlopen(%s) failed.\n", libgl);
+    }
+#endif
 }
 
 //----------------------------------------------------------------------------------------------------------------------
