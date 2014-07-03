@@ -27,25 +27,12 @@ add_shared_linker_flag("-Wl,--no-as-needed")
 
 add_library(${PROJECT_NAME} SHARED ${SRC_LIST})
 
-set(CMAKE_LIBRARY_ARCHITECTURE ${LIBDIR})
-
-find_library(OPENGL_gl_LIBRARY
-    NAMES GL MesaGL libGL.so.1
-    PATHS /opt/graphics/OpenGL/lib
-          /usr/openwin/lib
-          /usr/shlib
-          /usr/X11R6/lib
-    )
-if (NOT OPENGL_gl_LIBRARY)
-    message(FATAL_ERROR "Find_package failed to locate ${LIBDIR} libGL.so.")
-endif()
-
 target_link_libraries(${PROJECT_NAME}
     dl
     rt
     m
     ${CMAKE_THREAD_LIBS_INIT}
-    ${OPENGL_gl_LIBRARY}
+    "${CMAKE_SOURCE_DIR}/libGL/${LIBDIR}/libGL.so"
     )
 
 build_options_finalize()

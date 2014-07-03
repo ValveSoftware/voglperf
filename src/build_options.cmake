@@ -27,17 +27,25 @@ if (BUILD_X64)
     set(LIBDIR "x86_64-linux-gnu")
 else()
     message("Building 32-bit voglperf...")
+
     set(CMAKE_EXECUTABLE_SUFFIX 32)
     set(CMAKE_SHARED_LIBRARY_SUFFIX "32.so")
     # TODO: get dir from: gcc -print-multiarch -m32
     set(LIBDIR "i386-linux-gnu")
     set_property(GLOBAL PROPERTY FIND_LIBRARY_USE_LIB64_PATHS False)
     list(APPEND CMAKE_LIBRARY_PATH /usr/lib32 /usr/local/lib32)
+
+    # http://www.cmake.org/Wiki/CMake_2.8.11_Docs
+    unset(FIND_LIBRARY_USE_LIB64_PATHS)
+endif()
+
+if (EXISTS "/etc/debian_version")
+    set(CMAKE_LIBRARY_ARCHITECTURE ${LIBDIR})
 endif()
 
 option(CMAKE_VERBOSE "Verbose CMake" FALSE)
 if( CMAKE_VERBOSE )
-    SET(CMAKE_VERBOSE_MAKEFILE ON)
+    set(CMAKE_VERBOSE_MAKEFILE ON)
 endif()
 
 # Default to release build

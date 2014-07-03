@@ -860,21 +860,6 @@ VOGL_API_EXPORT void *dlopen(const char *pFile, int mode)
 __attribute__((constructor)) static void vogl_perf_constructor_func()
 {
     voglperf_init();
-
-#if 0
-    static const char libgl[] = "libGL.so";
-    static void *libgl_handle = NULL;
-
-    if (!libgl_handle)
-    {
-        // LOG_INFO, LOG_WARNING, LOG_ERR
-        openlog(NULL, LOG_CONS | LOG_PERROR | LOG_PID, LOG_USER);
-
-        libgl_handle = dlopen(libgl, RTLD_NOW | RTLD_GLOBAL);
-        if (!libgl_handle)
-            syslog(LOG_ERR, "(voglperf) dlopen(%s) failed.\n", libgl);
-    }
-#endif
 }
 
 //----------------------------------------------------------------------------------------------------------------------
