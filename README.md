@@ -57,6 +57,8 @@ Building voglperf on SteamOS
   * `sudo apt-get update`
   * `sudo apt-get install git ca-certificates cmake g++ gcc-multilib g++-multilib`
   * `sudo apt-get install mesa-common-dev libedit-dev libtinfo-dev libtinfo-dev:i386`
+  * `sudo apt-get install libedit-dev libedit-dev:i386 libncurses5-dev
+libncurses5-dev:i386 libgcc-dev libgcc-dev:i386 lib32gcc-dev libgcc-dev libstdc++-dev libstdc++-dev:i386`
 
  - Get the volgperf source:
   * `git clone https://github.com/ValveSoftware/voglperf.git`

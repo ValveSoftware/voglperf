@@ -42,12 +42,28 @@ build_options_finalize()
 #
 project(voglperfrun)
 
-# Add libedit library.
-include_directories(${CMAKE_SOURCE_DIR}/libedit-3.1/include)
-find_library(tinfo_LIBRARY NAMES tinfo curses)
+
+#require tinfo and curses
+find_library(curses_LIBRARY NAMES curses )
+if(NOT curses_LIBRARY)
+  message(FATAL_ERROR "Could not find libcurses")
+endif()
+
+find_library(tinfo_LIBRARY NAMES tinfo )
+if(NOT tinfo_LIBRARY)
+  message(FATAL_ERROR "Could not find libtinfo")
+endif()
+
+find_library(edit_LIBRARY NAMES edit )
+if(NOT edit_LIBRARY)
+  message(FATAL_ERROR "Could not find libedit")
+endif()
+
+#
 set(LIBEDIT_LIBS
-    "${CMAKE_SOURCE_DIR}/libedit-3.1/lib/${LIBDIR}/libedit.a"
+    ${edit_LIBRARY}
     ${tinfo_LIBRARY}
+    ${curses_LIBRARY}
     )
 
 set(SRC_LIST
