@@ -52,10 +52,13 @@ Building voglperf on SteamOS
  - Click **"Terminal"** icon.
  - Type **`passwd`** and enter a password.
  - Install build packages:
-  * `sudo apt-get install steamos-dev`
-  * `echo "deb http://ftp.debian.org/debian wheezy main contrib non-free" | sudo tee -a /etc/apt/sources.list`
-  * `sudo apt-get update`
-  * `sudo apt-get install git ca-certificates cmake g++ gcc-multilib g++-multilib ncurses-dev mesa-common-dev libedit-dev libtinfo-dev libtinfo-dev:i386`
+    ```
+    sudo apt-get install steamos-dev
+    echo "deb http://ftp.debian.org/debian wheezy main contrib non-free" | sudo tee -a /etc/apt/sources.list
+    sudo apt-get update
+    sudo apt-get install git ca-certificates cmake g++ gcc-multilib g++-multilib 
+    sudo apt-get install ncurses-dev mesa-common-dev libedit-dev libtinfo-dev libtinfo-dev:i386
+    ```
 
  - Get the volgperf source:
   * `git clone https://github.com/ValveSoftware/voglperf.git`
