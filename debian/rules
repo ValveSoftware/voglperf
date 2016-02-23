@@ -3,6 +3,8 @@
 %:
 	dh $@
 
+override_dh_auto_configure:
+
 override_dh_auto_build:
 	# Make file does not build both 32 bit and 64 bit targets at once (orig Readme is wrong)
 	# build voglperf32 
