@@ -1,1 +1,2 @@
-voglperf /usr/bin/
+voglperf32 /usr/bin/
+voglperf64 /usr/bin/
