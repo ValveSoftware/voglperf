@@ -14,7 +14,6 @@ Build-Depends: debhelper (>= 9),
  libedit-dev,
  libtinfo-dev,
  libtinfo-dev:i386
-sudo apt-get install ncurses-dev mesa-common-dev libedit-dev libtinfo-dev libtinfo-dev:i386
 Standards-Version: 3.9.5
 Homepage: http://github.com/ProfessorKaos64/voglperf
 Vcs-Git: git://github.com/ProfessorKaos64/voglperf
