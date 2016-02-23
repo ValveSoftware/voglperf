@@ -29,13 +29,10 @@ Building
 
 We use cmake and the voglproj binaries are put into the bin directory. A Makefile is included to simplify this a bit and see how cmake is launched.
 
-To build amd64 and i386 packages:
-> make
-
-To build just i386:
+To build i386:
 > make voglperf32
 
-To build just amd64:
+To build amd64:
 > make voglperf64
 
 To delete the build32, build64, and bin build files:
