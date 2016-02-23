@@ -1,0 +1,15 @@
+Source: voglperf
+Section: utils
+Priority: extra
+Maintainer: SteamOS-Tools Signing Key <mdeguzis@gmail.com>
+Build-Depends: debhelper (>= 9)
+Standards-Version: 3.9.5
+Homepage: http://github.com/ProfessorKaos64/voglperf
+Vcs-Git: git://github.com/ProfessorKaos64/voglperf
+Vcs-Browser: http://github.com/ProfessorKaos64/voglperf
+
+Package: voglperf
+Architecture: all
+Depends: curl
+Description: voglperf Benchmarking tool for Linux OpenGL game.
+ Spews frame information every second.
