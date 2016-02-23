@@ -2,7 +2,19 @@ Source: voglperf
 Section: utils
 Priority: extra
 Maintainer: SteamOS-Tools Signing Key <mdeguzis@gmail.com>
-Build-Depends: debhelper (>= 9)
+Build-Depends: debhelper (>= 9),
+ steamos-dev,
+ ca-certificates,
+ cmake,
+ g++,
+ gcc-multilib,
+ g++-multilib,
+ ncurses-dev,
+ mesa-common-dev,
+ libedit-dev,
+ libtinfo-dev,
+ libtinfo-dev:i386
+sudo apt-get install ncurses-dev mesa-common-dev libedit-dev libtinfo-dev libtinfo-dev:i386
 Standards-Version: 3.9.5
 Homepage: http://github.com/ProfessorKaos64/voglperf
 Vcs-Git: git://github.com/ProfessorKaos64/voglperf
