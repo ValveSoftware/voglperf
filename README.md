@@ -29,13 +29,10 @@ Building
 
 We use cmake and the voglproj binaries are put into the bin directory. A Makefile is included to simplify this a bit and see how cmake is launched.
 
-To build amd64 and i386 packages:
-> make
-
-To build just i386:
+To build i386:
 > make voglperf32
 
-To build just amd64:
+To build amd64:
 > make voglperf64
 
 To delete the build32, build64, and bin build files:
@@ -52,11 +49,13 @@ Building voglperf on SteamOS
  - Click **"Terminal"** icon.
  - Type **`passwd`** and enter a password.
  - Install build packages:
-  * `sudo apt-get install steamos-dev `
-  * `echo "deb http://ftp.debian.org/debian wheezy main contrib non-free" | sudo tee -a /etc/apt/sources.list`
-  * `sudo apt-get update`
-  * `sudo apt-get install git ca-certificates cmake g++ gcc-multilib g++-multilib`
-  * `sudo apt-get install mesa-common-dev libedit-dev libtinfo-dev libtinfo-dev:i386`
+    ```
+    sudo apt-get install steamos-dev
+    echo "deb http://ftp.debian.org/debian wheezy main contrib non-free" | sudo tee -a /etc/apt/sources.list
+    sudo apt-get update
+    sudo apt-get install git ca-certificates cmake g++ gcc-multilib g++-multilib 
+    sudo apt-get install ncurses-dev mesa-common-dev libedit-dev libtinfo-dev libtinfo-dev:i386
+    ```
 
  - Get the volgperf source:
   * `git clone https://github.com/ValveSoftware/voglperf.git`
@@ -126,7 +125,7 @@ Run vogl w/ SSH on SteamOS
   * Run various commands:
      * `help`
      * `status`
-     * `showfps on`
+     * `fpsshow on`
      * `game start 440`
      * etc.
 

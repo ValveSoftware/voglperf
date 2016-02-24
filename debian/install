@@ -1,0 +1,2 @@
+bin/voglperfrun32 /usr/bin/
+bin/voglperfrun64 /usr/bin/
