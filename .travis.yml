@@ -1,0 +1,42 @@
+language: cpp
+sudo: required
+dist: trusty
+addons:
+  apt:
+    packages:
+      - build-essential
+      - pkg-config
+      - cmake
+      - ca-certificates
+      - g++
+      - gcc-multilib
+      - g++-gcc-multilib
+      - mesa-common-dev
+      - libedit-dev
+      - libtinfo-dev
+compiler:
+  - gcc
+  - clang
+git:
+  depth: 10
+before_install:
+  - echo "before_install"
+  - df -h
+  - date
+  - pwd
+  - uname -a -m
+  - gcc --version
+  - g++ --version
+  - clang --version
+  - which clang
+  - which g++
+  - git --version 
+  - git tag
+  - apt-cache show clang build-essential gcc
+  - lsb_release -a
+install:
+  - echo "install start"
+before_script:
+  - echo "before_script"
+script:
+  - make voglperf64
