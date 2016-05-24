@@ -23,6 +23,12 @@ Can also write frame times to a log file which can then be graphed with gnuplot,
     0.29
     0.29
     ...
+Dependencies 
+------------
+libboost-thread-dev 
+libsdl2-dev 
+build-essential 
+The above appears to be the minimum for *buntu derivatives
 
 Building
 --------
