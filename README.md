@@ -31,7 +31,7 @@ libsdl2-dev
 
 build-essential 
 
-The above appears to be the minimum for *buntu derivatives
+The above appears to be the minimum required to get voglperf to build on xubuntu 16.04
 
 Building
 --------
