@@ -595,8 +595,10 @@ static void voglperf_swap_buffers(Display *dpy, GLXDrawable drawable, int flush_
         if (g_logfile_fd != -1)
         {
             // Add this frame time to our logfile.
-            snprintf(g_logfile_buf + g_logfile_buf_len, sizeof(g_logfile_buf) - g_logfile_buf_len, "%.2f, %.2f\n", time_frame * (g_rcpMILLION,s_frameinfo.frame_count * (double)g_BILLION / s_frameinfo.time_benchmark));
+            snprintf(g_logfile_buf + g_logfile_buf_len, sizeof(g_logfile_buf) - g_logfile_buf_len, "%.2f, %.2f\n", time_frame * g_rcpMILLION, s_frameinfo.frame_count * (double)g_BILLION / s_frameinfo.time_benchmark);
             g_logfile_buf_len += strlen(g_logfile_buf + g_logfile_buf_len);
+            
+           
         }
 
         // If this time would push our total benchmark time over 1 second, spew out the benchmark data.
