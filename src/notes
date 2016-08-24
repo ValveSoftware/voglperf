@@ -1,0 +1,18 @@
+1000/average frame time = fps adjusted for average frame time.
+
+stdev(fps)  = how "flaky" the fps is, good measure of whether or not the game runs "well/stable"
+stdev (frame times) = same as aboveish, engine efficiency.  
+
+
+todo:
+
+remove 2 lines @ start of log (pulseaudio?? x64 )
+ mitigate the -nan value for fps @ start, maybe trim first 3 lines? 
+
+add hwinfo @ end of log for automated report/testing for easy reposting/sharing. 
+
+possibly auto parse logs? 
+
+min/max/avg/stdev for frametime * fps.
+
+logfiles go to home instead of tmp/ or allow user specify. 
