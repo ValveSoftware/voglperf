@@ -729,9 +729,10 @@ static void update_app_messages(voglperf_data_t &data)
             app_finished = true;
         }
         else  if (data.flags & F_FPSPRINT)
-        {
-            webby_ws_printf("%.2f fps frames:%u time:%.2fms min:%.2fms max:%.2fms\n",
-                            mbuf_fps.fps, mbuf_fps.frame_count, mbuf_fps.frame_time, mbuf_fps.frame_min, mbuf_fps.frame_max);
+        {	
+			//overlay output 
+            webby_ws_printf("%.2f fps  FT%.2fms FTMin:%.2fms FTMax:%.2fms\n",
+                            mbuf_fps.fps,  mbuf_fps.frame_time, mbuf_fps.frame_min, mbuf_fps.frame_max);
         }
     }
 
