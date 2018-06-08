@@ -23,6 +23,15 @@ Can also write frame times to a log file which can then be graphed with gnuplot,
     0.29
     0.29
     ...
+Dependencies 
+------------
+libboost-thread-dev 
+
+libsdl2-dev 
+
+build-essential 
+
+The above appears to be the minimum required to get voglperf to build on xubuntu 16.04
 
 Building
 --------
@@ -52,11 +61,13 @@ Building voglperf on SteamOS
  - Click **"Terminal"** icon.
  - Type **`passwd`** and enter a password.
  - Install build packages:
-  * `sudo apt-get install steamos-dev `
-  * `echo "deb http://ftp.debian.org/debian wheezy main contrib non-free" | sudo tee -a /etc/apt/sources.list`
-  * `sudo apt-get update`
-  * `sudo apt-get install git ca-certificates cmake g++ gcc-multilib g++-multilib`
-  * `sudo apt-get install mesa-common-dev libedit-dev libtinfo-dev libtinfo-dev:i386`
+    ```
+    sudo apt-get install steamos-dev
+    echo "deb http://ftp.debian.org/debian wheezy main contrib non-free" | sudo tee -a /etc/apt/sources.list
+    sudo apt-get update
+    sudo apt-get install git ca-certificates cmake g++ gcc-multilib g++-multilib 
+    sudo apt-get install ncurses-dev mesa-common-dev libedit-dev libtinfo-dev libtinfo-dev:i386
+    ```
 
  - Get the volgperf source:
   * `git clone https://github.com/ValveSoftware/voglperf.git`
@@ -126,7 +137,7 @@ Run vogl w/ SSH on SteamOS
   * Run various commands:
      * `help`
      * `status`
-     * `showfps on`
+     * `fpsshow on`
      * `game start 440`
      * etc.
 
