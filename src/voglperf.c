@@ -343,7 +343,7 @@ static int voglperf_logfile_open(const char *logfile_name, uint64_t seconds)
 
             g_logfile_time = seconds * 1000000000;
 
-            strncpy(g_logfile_name, logfile_name, sizeof(g_logfile_name));
+            strncpy(g_logfile_name, logfile_name, sizeof(g_logfile_name) - 1);
 
             if (g_msqid != -1)
             {
