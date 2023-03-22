@@ -783,7 +783,7 @@ void webby_update(std::vector<std::string> *commands, struct timeval *timeoutval
 //----------------------------------------------------------------------------------------------------------------------
 void webby_end()
 {
-    (void) webby_data().ws_connections.empty();
+    static_cast<void>(webby_data().ws_connections.empty());
 
     if (webby_data().server)
     {
